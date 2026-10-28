@@ -1,0 +1,21 @@
+# Binaries
+dist/
+*.exe
+
+# Go
+*.exe
+/test
+coverage.out
+coverage.txt
+
+# Local data
+data/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store

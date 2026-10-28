@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  GO_VERSION: "1.22"
+  TEST_DB_URL: postgres://s3ipfs:s3ipfs@localhost:5432/s3ipfs?sslmode=disable
+
+jobs:
+  lint-and-vet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Go mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum || (echo "go.mod/go.sum out of sync; run go mod tidy" && exit 1)
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Lint with golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: s3ipfs
+          POSTGRES_PASSWORD: s3ipfs
+          POSTGRES_DB: s3ipfs
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run tests with coverage
+        env:
+          TEST_DB_URL: ${{ env.TEST_DB_URL }}
+        run: |
+          go test ./... -count=1 -coverprofile=coverage.out
+
+      - name: Show coverage report
+        run: go tool cover -func=coverage.out
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          fail_ci_if_error: false

@@ -1,0 +1,171 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: meiling
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meiling-config
+  namespace: meiling
+data:
+  DB_URL: "postgres://s3ipfs:s3ipfs@postgres.meiling.svc.cluster.local:5432/s3ipfs?sslmode=disable"
+  STORAGE_PATH: "/data"
+  LISTEN_ADDR: ":8080"
+  PUBLIC_HOST: "http://meiling.meiling.svc.cluster.local:8080"
+  ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE"
+  SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  IPFS_NODE_ENDPOINTS: "http://ipfs-node-1:5001,http://ipfs-node-2:5001"
+  IPFS_REPLICA_FACTOR: "2"
+  IPFS_RECONCILE_INTERVAL: "10s"
+  RATE_LIMIT_RPS: "50"
+  RATE_LIMIT_BURST: "100"
+  MAX_BODY_BYTES: "1073741824"
+  CORS_ALLOW_ORIGINS: "*"
+  METRICS_ENABLED: "true"
+  DB_MAX_OPEN_CONNS: "25"
+  DB_MAX_IDLE_CONNS: "5"
+  DB_CONN_MAX_LIFE: "30m"
+  READ_TIMEOUT: "30s"
+  WRITE_TIMEOUT: "30s"
+  IDLE_TIMEOUT: "120s"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: meiling-secrets
+  namespace: meiling
+type: Opaque
+stringData:
+  # Override these with strong values in production.
+  SEED_ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE"
+  SEED_SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meiling
+  namespace: meiling
+  labels:
+    app: meiling
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: meiling
+  template:
+    metadata:
+      labels:
+        app: meiling
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/meiling/meiling:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: meiling-config
+          env:
+            - name: SEED_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: meiling-secrets
+                  key: SEED_ACCESS_KEY_ID
+            - name: SEED_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: meiling-secrets
+                  key: SEED_SECRET_ACCESS_KEY
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+      securityContext:
+        fsGroup: 1000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meiling
+  namespace: meiling
+  labels:
+    app: meiling
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app: meiling
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: meiling-storage
+  namespace: meiling
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: meiling
+  namespace: meiling
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "1g"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: meiling.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: meiling
+                port:
+                  number: 8080
