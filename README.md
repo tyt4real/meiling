@@ -4,7 +4,7 @@ From-scratch rebuild of Filebase's core: S3-compatible object storage + IPFS pin
 
 ## What it implements
 
-**S3 API** (SigV4, XML responses, region `auto`): buckets, objects, `ListObjectsV2`, `HeadObject`, `GetObject`, `PutObject`, `DeleteObject`, `HeadBucket`, `CreateBucket`, `DeleteBucket`, `GetBucketLocation`, path-style and virtual-host-style addressing.
+**S3 API** (SigV4, XML responses, region `auto`): buckets, objects, `ListObjectsV2`, `HeadObject`, `GetObject`, `PutObject`, `DeleteObject`, `HeadBucket`, `CreateBucket`, `DeleteBucket`, `GetBucketLocation`, multipart uploads, path-style and virtual-host-style addressing.
 
 **HTTP byte-range reads**: `GET /{bucket}/{key}` and `HEAD` support `Range: bytes=start-end`, `bytes=start-`, and `bytes=-suffix`, returning `206 Partial Content` (with `Content-Range`, `Content-Length`, `Accept-Ranges: bytes`) or `416 Range Not Satisfiable` (with `Content-Range: bytes */size`).
 

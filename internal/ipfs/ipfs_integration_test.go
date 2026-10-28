@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS ipfs_pin_replicas (id UUID PRIMARY KEY, pin_id UUID N
 func buildServer() *httptest.Server {
 	st := &store.FS{Root: "/tmp/s3ipfs-ipfs-test-storage-external"}
 	reg := metrics.NewRegistry()
-	s3Handler := s3.S3Handler(ipfstestPool, st, reg)
+	s3Handler := s3.S3Handler(ipfstestPool, st, "/tmp/s3ipfs-ipfs-test-storage-external", nil, reg)
 	dist := ipfs.NewDistributor(ipfstestPool, reg)
 	ipfsHandler := ipfs.IPFSHandler(ipfstestPool, dist, reg)
 

@@ -38,8 +38,9 @@ type Config struct {
 	SecretAccessKey string
 
 	// IPFS
-	IPFSReplicaFactor int
+	IPFSReplicaFactor   int
 	IPFSReconcileInterval time.Duration
+	IPFSUploadsEnabled  bool // when true, PutObject ingests uploads to an IPFS node
 
 	// Security
 	RateLimitRPS     float64
@@ -73,8 +74,9 @@ func Load() (*Config, error) {
 		IPFSCacheDir:      getEnv("IPFS_CACHE_DIR", ""),
 		AccessKeyID:       getEnv("ACCESS_KEY_ID", ""),
 		SecretAccessKey:   getEnv("SECRET_ACCESS_KEY", ""),
-		IPFSReplicaFactor: getInt("IPFS_REPLICA_FACTOR", "2"),
+		IPFSReplicaFactor:   getInt("IPFS_REPLICA_FACTOR", "2"),
 		IPFSReconcileInterval: getDuration("IPFS_RECONCILE_INTERVAL", "10s"),
+		IPFSUploadsEnabled:  getBool("IPFS_UPLOADS_ENABLED", "false"),
 		RateLimitRPS:      getFloat("RATE_LIMIT_RPS", "50"),
 		RateLimitBurst:    getInt("RATE_LIMIT_BURST", "100"),
 		CORSAllowOrigins:  splitEnv("CORS_ALLOW_ORIGINS", "*"),

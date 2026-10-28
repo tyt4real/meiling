@@ -65,7 +65,13 @@ type objectMeta struct {
 // Put streams src into IPFS, records the CID sidecar, and optionally caches
 // the content locally. The whole body is streamed, not buffered in RAM.
 func (s *IPFS) Put(ctx context.Context, bucket, key string, src io.Reader, contentType string) (ObjectInfo, error) {
-	cid, size, err := s.client.Add(src)
+	cid, size, err := s.client.Add(ctx, src, key, ipfs.AddOptions{
+		Pin:        true,
+		CIDVersion: 1,
+		RawLeaves:  true,
+		Chunker:    "size-1048576",
+		Quieter:    true,
+	})
 	if err != nil {
 		return ObjectInfo{}, fmt.Errorf("ipfs add: %w", err)
 	}
@@ -159,7 +165,7 @@ func (s *IPFS) fetchToCache(ctx context.Context, bucket, key, cid, contentPath s
 		return err
 	}
 
-	rc, err := s.client.Cat(cid)
+	rc, err := s.client.Cat(ctx, cid, 0, 0)
 	if err != nil {
 		return fmt.Errorf("ipfs cat %s: %w", cid, err)
 	}

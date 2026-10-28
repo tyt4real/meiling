@@ -56,6 +56,12 @@ Operations:
 - `GET /{bucket}/{key}` — `GetObject` (supports `Range: bytes=...`; `206`/`416`)
 - `HEAD /{bucket}/{key}` — `HeadObject` (includes `Accept-Ranges: bytes`)
 - `DELETE /{bucket}/{key}` — `DeleteObject`
+- `POST /{bucket}/{key}?uploads` — `CreateMultipartUpload`
+- `PUT /{bucket}/{key}?partNumber=N&uploadId=X` — `UploadPart`
+- `POST /{bucket}/{key}?uploadId=X` — `CompleteMultipartUpload`
+- `DELETE /{bucket}/{key}?uploadId=X` — `AbortMultipartUpload`
+- `POST /{bucket}/{key}?delete` — `DeleteObjects`
+- `PUT /{bucket}/{key}?copy` — `CopyObject`
 
 Byte-range behavior:
 - `Range: bytes=start-end` → `206 Partial Content`, `Content-Range: bytes start-end/size`
@@ -73,6 +79,20 @@ aws s3 mb s3://demo-bucket --endpoint-url http://localhost:8080
 aws s3 cp file.txt s3://demo-bucket/file.txt --endpoint-url http://localhost:8080
 aws s3 ls s3://demo-bucket --endpoint-url http://localhost:8080
 ```
+
+## IPFS uploads to the public network
+
+Set `STORAGE_BACKEND=fs` (default) and `IPFS_UPLOADS_ENABLED=true` so that `PutObject`
+and multipart `CompleteMultipartUpload` stream each object to a Kubo node
+(`/api/v0/add`, `pin=true`, `cid-version=1`, `raw-leaves=true`,
+`chunker=size-1048576`) and return the CID in the `x-amz-meta-cid` response
+header (Filebase-compatible). Pins are replicated to `IPFS_REPLICA_FACTOR`
+nodes via the existing distributor. If the IPFS node is unavailable mid-upload,
+the local copy is kept, the object row is marked `ipfs_status='pending'`, and no
+CID header is returned; the reconciler retries the add later.
+
+When `IPFS_UPLOADS_ENABLED=false` (default), objects are stored on the
+filesystem only and no CID is returned.
 
 ## IPFS pinning API
 
@@ -120,6 +140,7 @@ Set `STORAGE_BACKEND=ipfs` to store object content on IPFS instead of the local 
 | `SECRET_ACCESS_KEY` | (required) | S3 secret access key |
 | `IPFS_REPLICA_FACTOR` | `2` | Pin replica count |
 | `IPFS_RECONCILE_INTERVAL` | `10s` | Pin reconcile interval |
+| `IPFS_UPLOADS_ENABLED` | `false` | When true, PutObject/multipart add objects to a Kubo node and return the CID |
 | `RATE_LIMIT_RPS` | `50` | Rate limit requests/sec |
 | `RATE_LIMIT_BURST` | `100` | Rate limit burst |
 | `CORS_ALLOW_ORIGINS` | `*` | Allowed CORS origins |
@@ -138,9 +159,16 @@ postgres                       # accounts, buckets, objects, access_keys,
                                # ipfs_nodes, ipfs_pins, ipfs_pin_replicas
 ```
 
-The `objects` table gained two nullable/added columns in migration `002_ipfs_storage.sql`:
+The `objects` table gained columns in migrations `002_ipfs_storage.sql` and
+`003_s3_ipfs_uploads.sql`:
 - `cid TEXT` — IPFS content identifier (NULL for filesystem-backed objects)
 - `storage_backend TEXT NOT NULL DEFAULT 'fs'` — `fs` or `ipfs`
+- `ipfs_status TEXT NOT NULL DEFAULT 'none'` — `none` | `pending` | `pinned` | `failed`
+- `user_metadata JSONB NOT NULL DEFAULT '{}'` — client-supplied `x-amz-meta-*` headers
+
+The `ipfs_pins` table gained `source TEXT` and `object_id UUID` (migration
+`003_s3_ipfs_uploads.sql`). The `multipart_uploads` and `multipart_parts`
+tables (migration `004_multipart_uploads.sql`) stage multipart uploads.
 
 ## Architecture
 

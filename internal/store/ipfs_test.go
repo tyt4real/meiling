@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,16 +26,36 @@ func newMockIPFS() *mockIPFS {
 func (m *mockIPFS) handler(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/api/v0/add":
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		ct := r.Header.Get("Content-Type")
+		if ct == "" || !strings.HasPrefix(ct, "multipart/form-data") {
+			http.Error(w, "expected multipart/form-data", http.StatusBadRequest)
 			return
 		}
-		sum := sha256.Sum256(body)
+		// Stream the multipart body and pick up the "file" field content.
+		mr := multipart.NewReader(r.Body, strings.TrimPrefix(ct, "multipart/form-data; boundary="))
+		var fileData []byte
+		for {
+			part, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if part.FormName() == "file" {
+				fileData, err = io.ReadAll(part)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+		}
+		sum := sha256.Sum256(fileData)
 		cid := "bafy" + hex.EncodeToString(sum[:])
-		m.contents[cid] = body
+		m.contents[cid] = fileData
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"Hash": cid, "Size": int64(len(body))})
+		json.NewEncoder(w).Encode(map[string]interface{}{"Hash": cid, "Size": int64(len(fileData))})
 	case "/api/v0/cat":
 		cid := r.URL.Query().Get("arg")
 		data, ok := m.contents[cid]

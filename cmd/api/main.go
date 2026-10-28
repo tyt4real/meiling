@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -71,9 +72,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Optional IPFS adder: when IPFS_UPLOADS_ENABLED is set, PutObject ingests
+	// uploads to a Kubo node and returns the CID in x-amz-meta-cid.
+	var ipfsAdd s3.IPFSAddFunc
+	if cfg.IPFSUploadsEnabled {
+		ipfsClient := ipfs.NewNodeClient(cfg.IPFSEndpoint)
+		ipfsAdd = func(ctx context.Context, src io.Reader, name string) (string, int64, error) {
+			return ipfsClient.Add(ctx, src, name, ipfs.AddOptions{
+				Pin:        true,
+				CIDVersion: 1,
+				RawLeaves:  true,
+				Chunker:    "size-1048576",
+				Quieter:    true,
+			})
+		}
+	}
+
 	reg := metrics.NewRegistry()
 
-	s3Handler := s3.S3Handler(pool, st, reg)
+	s3Handler := s3.S3Handler(pool, st, cfg.StoragePath, ipfsAdd, reg)
 
 	// Register IPFS nodes from DB into the distributor.
 	dbNodes, err := db.ListNodes(ctx, pool)
@@ -215,7 +232,31 @@ CREATE INDEX IF NOT EXISTS idx_ipfs_pin_replicas_pin ON ipfs_pin_replicas(pin_id
 CREATE INDEX IF NOT EXISTS idx_ipfs_pin_replicas_node ON ipfs_pin_replicas(node_id);
 ALTER TABLE objects ADD COLUMN IF NOT EXISTS cid TEXT;
 ALTER TABLE objects ADD COLUMN IF NOT EXISTS storage_backend TEXT NOT NULL DEFAULT 'fs';
+ALTER TABLE objects ADD COLUMN IF NOT EXISTS ipfs_status TEXT NOT NULL DEFAULT 'none';
+ALTER TABLE objects ADD COLUMN IF NOT EXISTS user_metadata JSONB NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_objects_cid ON objects(cid) WHERE cid IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_objects_ipfs_status ON objects(ipfs_status);
+ALTER TABLE ipfs_pins ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'api';
+ALTER TABLE ipfs_pins ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES objects(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS ipfs_pins_source_idx ON ipfs_pins(source);
+CREATE INDEX IF NOT EXISTS ipfs_pins_object_id_idx ON ipfs_pins(object_id);
+CREATE TABLE IF NOT EXISTS multipart_uploads (
+    upload_id      TEXT PRIMARY KEY,
+    bucket_id      UUID NOT NULL REFERENCES buckets(id) ON DELETE CASCADE,
+    key            TEXT NOT NULL,
+    content_type   TEXT,
+    user_metadata  JSONB NOT NULL DEFAULT '{}',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS multipart_parts (
+    upload_id   TEXT NOT NULL REFERENCES multipart_uploads(upload_id) ON DELETE CASCADE,
+    part_number INT NOT NULL,
+    size        BIGINT NOT NULL,
+    etag        TEXT NOT NULL,
+    PRIMARY KEY (upload_id, part_number)
+);
+CREATE INDEX IF NOT EXISTS idx_multipart_uploads_bucket ON multipart_uploads(bucket_id);
+CREATE INDEX IF NOT EXISTS idx_multipart_parts_upload ON multipart_parts(upload_id);
 `
 	_, err := pool.Exec(ctx, schema)
 	return err

@@ -65,6 +65,61 @@ type HeadBucketOutput struct{}
 
 type CreateBucketOutput struct{}
 
+// Multipart upload XML types.
+
+type InitiateMultipartUploadResult struct {
+	XMLName xml.Name `xml:"InitiateMultipartUploadResult"`
+	Bucket  string   `xml:"Bucket"`
+	Key     string   `xml:"Key"`
+	UploadId string  `xml:"UploadId"`
+}
+
+type Part struct {
+	PartNumber int    `xml:"PartNumber"`
+	ETag       string `xml:"ETag"`
+}
+
+type CompleteMultipartUpload struct {
+	XMLName xml.Name `xml:"CompleteMultipartUpload"`
+	Parts   []Part   `xml:"Part"`
+}
+
+type CompleteMultipartUploadResult struct {
+	XMLName      xml.Name `xml:"CompleteMultipartUploadResult"`
+	Location     string   `xml:"Location"`
+	Bucket       string   `xml:"Bucket"`
+	Key          string   `xml:"Key"`
+	ETag         string   `xml:"ETag"`
+	LastModified string   `xml:"LastModified,omitempty"`
+}
+
+type CopyObjectResult struct {
+	XMLName      xml.Name `xml:"CopyObjectResult"`
+	LastModified string   `xml:"LastModified"`
+	ETag         string   `xml:"ETag"`
+}
+
+// Delete objects XML types.
+
+type DeleteObjectsRequest struct {
+	XMLName xml.Name `xml:"Delete"`
+	Quiet   *bool    `xml:"Quiet,omitempty"`
+	Objects []ObjectIdentifier `xml:"Object"`
+}
+
+type ObjectIdentifier struct {
+	Key string `xml:"Key"`
+}
+
+type DeletedObject struct {
+	Key string `xml:"Key"`
+}
+
+type DeleteResult struct {
+	XMLName xml.Name `xml:"DeleteResult"`
+	Deleted []DeletedObject `xml:"Deleted,omitempty"`
+}
+
 func xmlResponse(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)

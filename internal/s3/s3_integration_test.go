@@ -2,8 +2,10 @@ package s3_test
 
 import (
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,10 +46,12 @@ func TestMain(m *testing.M) {
 CREATE TABLE IF NOT EXISTS accounts (id UUID PRIMARY KEY, email TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS buckets (id UUID PRIMARY KEY, account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, name TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS access_keys (id UUID PRIMARY KEY, account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, bucket_id UUID REFERENCES buckets(id) ON DELETE CASCADE, access_key_id TEXT UNIQUE NOT NULL, secret_access_key TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-CREATE TABLE IF NOT EXISTS objects (id UUID PRIMARY KEY, bucket_id UUID NOT NULL REFERENCES buckets(id) ON DELETE CASCADE, key TEXT NOT NULL, data_path TEXT NOT NULL, size BIGINT NOT NULL, content_type TEXT, etag TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (bucket_id, key));
+CREATE TABLE IF NOT EXISTS objects (id UUID PRIMARY KEY, bucket_id UUID NOT NULL REFERENCES buckets(id) ON DELETE CASCADE, key TEXT NOT NULL, data_path TEXT NOT NULL, size BIGINT NOT NULL, content_type TEXT, etag TEXT NOT NULL, cid TEXT, ipfs_status TEXT NOT NULL DEFAULT 'none', user_metadata JSONB NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (bucket_id, key));
 CREATE TABLE IF NOT EXISTS ipfs_nodes (id UUID PRIMARY KEY, peer_id TEXT, api_endpoint TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'healthy', last_seen TIMESTAMPTZ, capacity_used BIGINT NOT NULL DEFAULT 0, capacity_total BIGINT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS ipfs_pins (id UUID PRIMARY KEY, bucket_id UUID NOT NULL REFERENCES buckets(id) ON DELETE CASCADE, request_id TEXT UNIQUE NOT NULL, cid TEXT NOT NULL, name TEXT, status TEXT NOT NULL DEFAULT 'queued', size TEXT NOT NULL DEFAULT '0', replica_factor INT NOT NULL DEFAULT 2, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS ipfs_pin_replicas (id UUID PRIMARY KEY, pin_id UUID NOT NULL REFERENCES ipfs_pins(id) ON DELETE CASCADE, node_id UUID NOT NULL REFERENCES ipfs_nodes(id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'queued', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (pin_id, node_id));
+CREATE TABLE IF NOT EXISTS multipart_uploads (id UUID PRIMARY KEY, upload_id TEXT UNIQUE NOT NULL, bucket_id UUID NOT NULL REFERENCES buckets(id) ON DELETE CASCADE, key TEXT NOT NULL, content_type TEXT, user_metadata JSONB NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS multipart_parts (upload_id TEXT NOT NULL REFERENCES multipart_uploads(upload_id) ON DELETE CASCADE, part_number INT NOT NULL, size BIGINT NOT NULL, etag TEXT NOT NULL, PRIMARY KEY (upload_id, part_number));
 `
 	if _, err := s3testPool.Exec(context.Background(), schema); err != nil {
 		panic(fmt.Sprintf("migrate: %v", err))
@@ -63,7 +67,7 @@ CREATE TABLE IF NOT EXISTS ipfs_pin_replicas (id UUID PRIMARY KEY, pin_id UUID N
 func buildServer() *httptest.Server {
 	st := &store.FS{Root: "/tmp/s3ipfs-test-storage-external"}
 	reg := metrics.NewRegistry()
-	s3Handler := s3.S3Handler(s3testPool, st, reg)
+	s3Handler := s3.S3Handler(s3testPool, st, "/tmp/s3ipfs-test-storage-external", nil, reg)
 	dist := ipfs.NewDistributor(s3testPool, reg)
 	ipfsHandler := ipfs.IPFSHandler(s3testPool, dist, reg)
 
@@ -255,3 +259,191 @@ func TestS3FullFlow(t *testing.T) {
 		t.Fatalf("delete bucket: %d", resp.StatusCode)
 	}
 }
+
+func multipartCompleteXML(parts []struct {
+	PartNumber int
+	ETag       string
+}) string {
+	var b strings.Builder
+	b.WriteString(`<CompleteMultipartUpload>`)
+	for _, p := range parts {
+		b.WriteString(fmt.Sprintf(`<Part><PartNumber>%d</PartNumber><ETag>%s</ETag></Part>`, p.PartNumber, p.ETag))
+	}
+	b.WriteString(`</CompleteMultipartUpload>`)
+	return b.String()
+}
+
+func uploadPart(t *testing.T, server *httptest.Server, ak, sk, bucket, key, uploadID string, partNumber int, content string) string {
+	t.Helper()
+	query := url.Values{"partNumber": {fmt.Sprint(partNumber)}, "uploadId": {uploadID}}
+	req, err := sigv4Request(t, ak, sk, "PUT", "/"+bucket+"/"+key, strings.NewReader(content), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := doReq(t, server, req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("upload part %d: %d", partNumber, resp.StatusCode)
+	}
+	etag := strings.Trim(resp.Header.Get("ETag"), "\"")
+	resp.Body.Close()
+	return etag
+}
+
+func TestS3MultipartUploadComplete(t *testing.T) {
+	server := buildServer()
+	defer server.Close()
+
+	acc, err := db.CreateAccount(context.Background(), s3testPool, "mp-"+uuid.New().String()[:8]+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bucket := "mp-bucket-" + uuid.New().String()[:8]
+	b, err := db.CreateBucket(context.Background(), s3testPool, acc.ID, bucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak := "MPAK" + uuid.New().String()[:8]
+	sk := "MPSK" + uuid.New().String()[:8]
+	if _, err := db.CreateAccessKey(context.Background(), s3testPool, acc.ID, &b.ID, ak, sk); err != nil {
+		t.Fatal(err)
+	}
+
+	key := "multipart.bin"
+	part1 := strings.Repeat("aaa", 100)   // 300 bytes
+	part2 := strings.Repeat("bbb", 100)   // 300 bytes
+	expected := part1 + part2
+
+	// Initiate multipart upload.
+	req, err := sigv4Request(t, ak, sk, "POST", "/"+bucket+"/"+key, nil, url.Values{"uploads": {""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := doReq(t, server, req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create multipart upload: %d", resp.StatusCode)
+	}
+	var initResp struct {
+		UploadId string `xml:"UploadId"`
+	}
+	if err := xml.NewDecoder(resp.Body).Decode(&initResp); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if initResp.UploadId == "" {
+		t.Fatal("expected upload id")
+	}
+
+	// Upload parts.
+	e1 := uploadPart(t, server, ak, sk, bucket, key, initResp.UploadId, 1, part1)
+	e2 := uploadPart(t, server, ak, sk, bucket, key, initResp.UploadId, 2, part2)
+
+	// Complete multipart upload.
+	body := strings.NewReader(multipartCompleteXML([]struct {
+		PartNumber int
+		ETag       string
+	}{{1, e1}, {2, e2}}))
+	req, err = sigv4Request(t, ak, sk, "POST", "/"+bucket+"/"+key, body, url.Values{"uploadId": {initResp.UploadId}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/xml")
+	resp = doReq(t, server, req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("complete multipart: %d", resp.StatusCode)
+	}
+	var compResp struct {
+		ETag string `xml:"ETag"`
+	}
+	if err := xml.NewDecoder(resp.Body).Decode(&compResp); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	expectedEtag := md5Sum(e1+e2) + "-2"
+	if compResp.ETag != expectedEtag {
+		t.Errorf("expected ETag %s, got %s", expectedEtag, compResp.ETag)
+	}
+
+	// Get object: content must match concatenation.
+	req, err = sigv4Request(t, ak, sk, "GET", "/"+bucket+"/"+key, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp = doReq(t, server, req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get object: %d", resp.StatusCode)
+	}
+	data, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(data) != expected {
+		t.Errorf("content mismatch: got %q", string(data))
+	}
+}
+
+func TestS3MultipartUploadAbort(t *testing.T) {
+	server := buildServer()
+	defer server.Close()
+
+	acc, err := db.CreateAccount(context.Background(), s3testPool, "mpa-"+uuid.New().String()[:8]+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bucket := "mpa-bucket-" + uuid.New().String()[:8]
+	b, err := db.CreateBucket(context.Background(), s3testPool, acc.ID, bucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak := "MPAAK" + uuid.New().String()[:8]
+	sk := "MPASK" + uuid.New().String()[:8]
+	if _, err := db.CreateAccessKey(context.Background(), s3testPool, acc.ID, &b.ID, ak, sk); err != nil {
+		t.Fatal(err)
+	}
+
+	key := "aborted.bin"
+
+	// Initiate.
+	req, err := sigv4Request(t, ak, sk, "POST", "/"+bucket+"/"+key, nil, url.Values{"uploads": {""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := doReq(t, server, req)
+	var initResp struct {
+		UploadId string `xml:"UploadId"`
+	}
+	_ = xml.NewDecoder(resp.Body).Decode(&initResp)
+	resp.Body.Close()
+
+	// Upload a part.
+	_ = uploadPart(t, server, ak, sk, bucket, key, initResp.UploadId, 1, "part data")
+
+	// Abort.
+	req, err = sigv4Request(t, ak, sk, "DELETE", "/"+bucket+"/"+key, nil, url.Values{"uploadId": {initResp.UploadId}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp = doReq(t, server, req)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("abort multipart: %d", resp.StatusCode)
+	}
+
+	// Completing the aborted upload should fail.
+	body := strings.NewReader(multipartCompleteXML([]struct {
+		PartNumber int
+		ETag       string
+	}{{1, "whatever"}}))
+	req, err = sigv4Request(t, ak, sk, "POST", "/"+bucket+"/"+key, body, url.Values{"uploadId": {initResp.UploadId}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/xml")
+	resp = doReq(t, server, req)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 after abort, got %d", resp.StatusCode)
+	}
+}
+
+func md5Sum(s string) string {
+	h := md5.New()
+	io.WriteString(h, s)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+

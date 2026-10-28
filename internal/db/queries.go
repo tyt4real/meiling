@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,17 +33,6 @@ type Bucket struct {
 	AccountID uuid.UUID
 	Name      string
 	CreatedAt time.Time
-}
-
-type Object struct {
-	ID           uuid.UUID
-	BucketID     uuid.UUID
-	Key          string
-	DataPath     string
-	Size         int64
-	ContentType  sql.NullString
-	ETag         string
-	CreatedAt    time.Time
 }
 
 type IPFSPin struct {
@@ -186,15 +176,28 @@ func GetBucketLocation(ctx context.Context, q *pgxpool.Pool, name string) (strin
 	return loc, err
 }
 
-func CreateObject(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, key, dataPath string, size int64, contentType string, etag string) (*Object, error) {
+func CreateObject(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, key, dataPath string, size int64, contentType string, etag string, cid string, ipfsStatus string, userMetadata map[string]string) (*Object, error) {
 	id := uuid.New()
 	var o Object
+	var cidArg, umArg interface{}
+	if cid != "" {
+		cidArg = cid
+	}
+	if userMetadata == nil {
+		umArg = []byte("{}")
+	} else {
+		b, err := json.Marshal(userMetadata)
+		if err != nil {
+			return nil, err
+		}
+		umArg = b
+	}
 	err := q.QueryRow(ctx,
-		`INSERT INTO objects (id, bucket_id, key, data_path, size, content_type, etag)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7)
-		 RETURNING id, bucket_id, key, data_path, size, content_type, etag, created_at`,
-		id, bucketID, key, dataPath, size, contentType, etag).
-		Scan(&o.ID, &o.BucketID, &o.Key, &o.DataPath, &o.Size, &o.ContentType, &o.ETag, &o.CreatedAt)
+		`INSERT INTO objects (id, bucket_id, key, data_path, size, content_type, etag, cid, ipfs_status, user_metadata)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		 RETURNING id, bucket_id, key, data_path, size, content_type, etag, cid, ipfs_status, user_metadata, created_at`,
+		id, bucketID, key, dataPath, size, contentType, etag, cidArg, ipfsStatus, umArg).
+		Scan(&o.ID, &o.BucketID, &o.Key, &o.DataPath, &o.Size, &o.ContentType, &o.ETag, &o.CID, &o.IPFSStatus, &o.UserMetadata, &o.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -204,9 +207,9 @@ func CreateObject(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, key,
 func GetObjectByKey(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, key string) (*Object, error) {
 	var o Object
 	err := q.QueryRow(ctx,
-		`SELECT id, bucket_id, key, data_path, size, content_type, etag, created_at
+		`SELECT id, bucket_id, key, data_path, size, content_type, etag, cid, ipfs_status, user_metadata, created_at
 		 FROM objects WHERE bucket_id=$1 AND key=$2`, bucketID, key).
-		Scan(&o.ID, &o.BucketID, &o.Key, &o.DataPath, &o.Size, &o.ContentType, &o.ETag, &o.CreatedAt)
+		Scan(&o.ID, &o.BucketID, &o.Key, &o.DataPath, &o.Size, &o.ContentType, &o.ETag, &o.CID, &o.IPFSStatus, &o.UserMetadata, &o.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +217,7 @@ func GetObjectByKey(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, ke
 }
 
 func ListObjects(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, prefix, marker string, limit int) ([]Object, error) {
-	query := `SELECT id, bucket_id, key, data_path, size, content_type, etag, created_at
+	query := `SELECT id, bucket_id, key, data_path, size, content_type, etag, cid, ipfs_status, user_metadata, created_at
 		 FROM objects WHERE bucket_id=$1`
 	args := []any{bucketID}
 	argIdx := 2
@@ -238,10 +241,107 @@ func ListObjects(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, prefi
 	var out []Object
 	for rows.Next() {
 		var o Object
-		if err := rows.Scan(&o.ID, &o.BucketID, &o.Key, &o.DataPath, &o.Size, &o.ContentType, &o.ETag, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.BucketID, &o.Key, &o.DataPath, &o.Size, &o.ContentType, &o.ETag, &o.CID, &o.IPFSStatus, &o.UserMetadata, &o.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// CreateMultipartUpload records a new multipart upload and returns its upload ID.
+func CreateMultipartUpload(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, key, contentType string, userMetadata map[string]string) (*MultipartUpload, error) {
+	id := uuid.New()
+	uploadID := id.String()
+	var mu MultipartUpload
+	var umArg interface{}
+	if userMetadata == nil {
+		umArg = []byte("{}")
+	} else {
+		b, err := json.Marshal(userMetadata)
+		if err != nil {
+			return nil, err
+		}
+		umArg = b
+	}
+	err := q.QueryRow(ctx,
+		`INSERT INTO multipart_uploads (id, upload_id, bucket_id, key, content_type, user_metadata)
+		 VALUES ($1,$2,$3,$4,$5,$6)
+		 RETURNING id, upload_id, bucket_id, key, content_type, user_metadata, created_at`,
+		id, uploadID, bucketID, key, contentType, umArg).
+		Scan(&mu.ID, &mu.UploadID, &mu.BucketID, &mu.Key, &mu.ContentType, &mu.UserMetadata, &mu.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &mu, nil
+}
+
+// GetMultipartUpload returns a multipart upload by upload ID.
+func GetMultipartUpload(ctx context.Context, q *pgxpool.Pool, uploadID string) (*MultipartUpload, error) {
+	var mu MultipartUpload
+	err := q.QueryRow(ctx,
+		`SELECT id, upload_id, bucket_id, key, content_type, user_metadata, created_at
+		 FROM multipart_uploads WHERE upload_id=$1`, uploadID).
+		Scan(&mu.ID, &mu.UploadID, &mu.BucketID, &mu.Key, &mu.ContentType, &mu.UserMetadata, &mu.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &mu, nil
+}
+
+// ListMultipartParts returns the parts of a multipart upload ordered by part number.
+func ListMultipartParts(ctx context.Context, q *pgxpool.Pool, uploadID string) ([]MultipartPart, error) {
+	rows, err := q.Query(ctx,
+		`SELECT upload_id, part_number, size, etag
+		 FROM multipart_parts WHERE upload_id=$1 ORDER BY part_number ASC`, uploadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MultipartPart
+	for rows.Next() {
+		var p MultipartPart
+		if err := rows.Scan(&p.UploadID, &p.PartNumber, &p.Size, &p.ETag); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// CreateMultipartPart records a completed part.
+func CreateMultipartPart(ctx context.Context, q *pgxpool.Pool, uploadID string, partNumber int, size int64, etag string) error {
+	_, err := q.Exec(ctx,
+		`INSERT INTO multipart_parts (upload_id, part_number, size, etag)
+		 VALUES ($1,$2,$3,$4)
+		 ON CONFLICT (upload_id, part_number) DO UPDATE SET size=$3, etag=$4`,
+		uploadID, partNumber, size, etag)
+	return err
+}
+
+// DeleteMultipartUpload removes a multipart upload and all its parts.
+func DeleteMultipartUpload(ctx context.Context, q *pgxpool.Pool, uploadID string) error {
+	_, err := q.Exec(ctx, `DELETE FROM multipart_uploads WHERE upload_id=$1`, uploadID)
+	return err
+}
+
+// OldestMultipartUploads returns uploads older than the given cutoff, for janitor cleanup.
+func OldestMultipartUploads(ctx context.Context, q *pgxpool.Pool, cutoff time.Time, limit int) ([]MultipartUpload, error) {
+	rows, err := q.Query(ctx,
+		`SELECT id, upload_id, bucket_id, key, content_type, user_metadata, created_at
+		 FROM multipart_uploads WHERE created_at < $1 ORDER BY created_at ASC LIMIT $2`,
+		cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MultipartUpload
+	for rows.Next() {
+		var mu MultipartUpload
+		if err := rows.Scan(&mu.ID, &mu.UploadID, &mu.BucketID, &mu.Key, &mu.ContentType, &mu.UserMetadata, &mu.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, mu)
 	}
 	return out, rows.Err()
 }

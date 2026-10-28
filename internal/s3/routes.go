@@ -12,9 +12,9 @@ import (
 )
 
 // S3Handler routes bucket and object operations (path-style and virtual-host-style).
-func S3Handler(pool *pgxpool.Pool, st store.ObjectStore, reg *metrics.Registry) http.Handler {
+func S3Handler(pool *pgxpool.Pool, st store.ObjectStore, storageRoot string, ipfsAdd IPFSAddFunc, reg *metrics.Registry) http.Handler {
 	bAPI := &BucketAPI{Pool: pool, Reg: reg}
-	oAPI := &ObjectAPI{Pool: pool, Store: st, Reg: reg}
+	oAPI := &ObjectAPI{Pool: pool, Store: st, Reg: reg, StorageRoot: storageRoot, IPFSAdd: ipfsAdd}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bucketName, key, err := splitBucketKey(r)
 		if err != nil {
@@ -54,10 +54,42 @@ func S3Handler(pool *pgxpool.Pool, st store.ObjectStore, reg *metrics.Registry) 
 				bAPI.CreateBucket(w, r, accountID, bucketName)
 				return
 			}
+			q := r.URL.Query()
+			if q.Get("copy") != "" {
+				oAPI.CopyObjectByName(w, r, accountID, bucketName, key)
+				return
+			}
+			if q.Get("uploadId") != "" && q.Get("partNumber") != "" {
+				oAPI.UploadPartByName(w, r, accountID, bucketName, key)
+				return
+			}
 			oAPI.PutObjectByName(w, r, accountID, bucketName, key)
+		case http.MethodPost:
+			if key == "" {
+				errorResponse(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "The specified method is not allowed against this resource.", "")
+				return
+			}
+			q := r.URL.Query()
+			if _, ok := q["uploads"]; ok {
+				oAPI.CreateMultipartUploadByName(w, r, accountID, bucketName, key)
+				return
+			}
+			if q.Get("uploadId") != "" {
+				oAPI.CompleteMultipartUploadByName(w, r, accountID, bucketName, key)
+				return
+			}
+			if q.Get("delete") != "" {
+				oAPI.DeleteObjectsByName(w, r, accountID, bucketName)
+				return
+			}
+			errorResponse(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "The specified method is not allowed against this resource.", "")
 		case http.MethodDelete:
 			if key == "" {
 				bAPI.DeleteBucket(w, r, bucketName)
+				return
+			}
+			if r.URL.Query().Get("uploadId") != "" {
+				oAPI.AbortMultipartUploadByName(w, r, accountID, bucketName, key)
 				return
 			}
 			oAPI.DeleteObjectByName(w, r, accountID, bucketName, key)
