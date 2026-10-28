@@ -50,6 +50,53 @@ func (c *NodeClient) PinAdd(cid string) error {
 	return nil
 }
 
+// Cat streams the content of a CID from the node. The caller must close the
+// returned reader. The full file is streamed; the IPFS HTTP API does not
+// expose byte-range reads for cat, so callers seeking efficient range access
+// should cache the content locally (see store.IPFS).
+func (c *NodeClient) Cat(cid string) (io.ReadCloser, error) {
+	params := url.Values{"arg": {cid}}
+	resp, err := c.apiPath("GET", "/api/v0/cat", params, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("cat failed: %s", resp.Status)
+	}
+	return resp.Body, nil
+}
+
+// Add streams src into the node and returns the CID and size of the added
+// object. The content is not pinned; call PinAdd separately to retain it.
+func (c *NodeClient) Add(src io.Reader) (string, int64, error) {
+	params := url.Values{"arg": {}}
+	resp, err := c.apiPath("POST", "/api/v0/add", params, src)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", 0, fmt.Errorf("add failed: %s", resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", 0, err
+	}
+	var result struct {
+		CID  string `json:"Hash"`
+		Size int64  `json:"Size"`
+	}
+	if err := unmarshal(body, &result); err != nil {
+		return "", 0, err
+	}
+	return result.CID, result.Size, nil
+}
+
+var unmarshal = func(b []byte, v interface{}) error {
+	return json.Unmarshal(b, v)
+}
+
 // PinRemove tells the node to unpin a CID recursively.
 func (c *NodeClient) PinRemove(cid string) error {
 	params := url.Values{"arg": {cid}, "recursive": {"true"}}

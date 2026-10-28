@@ -9,15 +9,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"meiling/internal/db"
 	"meiling/internal/metrics"
-	"meiling/internal/store"
 	"meiling/internal/validation"
 )
 
 // BucketAPI handles bucket-level S3 operations.
 type BucketAPI struct {
-	Pool  *pgxpool.Pool
-	Reg   *metrics.Registry
-	Store *store.FS
+	Pool *pgxpool.Pool
+	Reg  *metrics.Registry
 }
 
 func (a *BucketAPI) ListBuckets(w http.ResponseWriter, r *http.Request, accountID uuid.UUID) {

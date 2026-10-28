@@ -28,7 +28,10 @@ type Config struct {
 	DBConnMaxLife  time.Duration
 
 	// Storage
-	StoragePath string
+	StoragePath    string
+	StorageBackend string // "fs" or "ipfs"
+	IPFSEndpoint   string
+	IPFSCacheDir   string
 
 	// Auth
 	AccessKeyID     string
@@ -65,6 +68,9 @@ func Load() (*Config, error) {
 		DBMaxIdleConns:    getInt("DB_MAX_IDLE_CONNS", "5"),
 		DBConnMaxLife:     getDuration("DB_CONN_MAX_LIFE", "30m"),
 		StoragePath:       getEnv("STORAGE_PATH", "./data"),
+		StorageBackend:    getEnv("STORAGE_BACKEND", "fs"),
+		IPFSEndpoint:      getEnv("IPFS_ENDPOINT", "http://localhost:5001"),
+		IPFSCacheDir:      getEnv("IPFS_CACHE_DIR", ""),
 		AccessKeyID:       getEnv("ACCESS_KEY_ID", ""),
 		SecretAccessKey:   getEnv("SECRET_ACCESS_KEY", ""),
 		IPFSReplicaFactor: getInt("IPFS_REPLICA_FACTOR", "2"),
@@ -110,6 +116,9 @@ func (c *Config) Validate() error {
 	}
 	if c.IPFSReplicaFactor < 1 {
 		return fmt.Errorf("IPFS_REPLICA_FACTOR must be >= 1")
+	}
+	if c.StorageBackend != "fs" && c.StorageBackend != "ipfs" {
+		return fmt.Errorf("STORAGE_BACKEND must be 'fs' or 'ipfs'")
 	}
 	// TLS: cert and key must be provided together.
 	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {

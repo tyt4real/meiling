@@ -12,8 +12,8 @@ import (
 )
 
 // S3Handler routes bucket and object operations (path-style and virtual-host-style).
-func S3Handler(pool *pgxpool.Pool, st *store.FS, reg *metrics.Registry) http.Handler {
-	bAPI := &BucketAPI{Pool: pool, Reg: reg, Store: st}
+func S3Handler(pool *pgxpool.Pool, st store.ObjectStore, reg *metrics.Registry) http.Handler {
+	bAPI := &BucketAPI{Pool: pool, Reg: reg}
 	oAPI := &ObjectAPI{Pool: pool, Store: st, Reg: reg}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bucketName, key, err := splitBucketKey(r)

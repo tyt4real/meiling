@@ -61,7 +61,11 @@ func main() {
 	// Seed demo account if none exists.
 	seed(ctx, pool)
 
-	st := &store.FS{Root: cfg.StoragePath}
+	st, err := newStore(cfg)
+	if err != nil {
+		slog.Error("create store", "error", err)
+		os.Exit(1)
+	}
 	if err := os.MkdirAll(cfg.StoragePath, 0750); err != nil {
 		slog.Error("storage dir", "error", err)
 		os.Exit(1)
@@ -109,7 +113,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", secMW)
 	mux.Handle("/ipfs/", ipfsHandler)
-	mux.Handle("/healthz", healthHandler(pool, st))
+	mux.Handle("/healthz", healthHandler(pool, cfg.StoragePath))
 	if cfg.MetricsEnabled {
 		mux.Handle("/metrics", reg.Handler())
 	}
@@ -209,6 +213,9 @@ CREATE INDEX IF NOT EXISTS idx_objects_bucket ON objects(bucket_id);
 CREATE INDEX IF NOT EXISTS idx_ipfs_pins_bucket ON ipfs_pins(bucket_id);
 CREATE INDEX IF NOT EXISTS idx_ipfs_pin_replicas_pin ON ipfs_pin_replicas(pin_id);
 CREATE INDEX IF NOT EXISTS idx_ipfs_pin_replicas_node ON ipfs_pin_replicas(node_id);
+ALTER TABLE objects ADD COLUMN IF NOT EXISTS cid TEXT;
+ALTER TABLE objects ADD COLUMN IF NOT EXISTS storage_backend TEXT NOT NULL DEFAULT 'fs';
+CREATE INDEX IF NOT EXISTS idx_objects_cid ON objects(cid) WHERE cid IS NOT NULL;
 `
 	_, err := pool.Exec(ctx, schema)
 	return err
@@ -279,7 +286,18 @@ func unauthHandler() http.Handler {
 	})
 }
 
-func healthHandler(pool *pgxpool.Pool, st *store.FS) http.Handler {
+func newStore(cfg *config.Config) (store.ObjectStore, error) {
+	switch cfg.StorageBackend {
+	case "ipfs":
+		return store.NewIPFS(cfg.IPFSEndpoint, cfg.IPFSCacheDir), nil
+	case "fs":
+		return &store.FS{Root: cfg.StoragePath}, nil
+	default:
+		return nil, fmt.Errorf("unknown storage backend: %s", cfg.StorageBackend)
+	}
+}
+
+func healthHandler(pool *pgxpool.Pool, storagePath string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		status := "ok"
 		details := map[string]string{}
@@ -290,7 +308,7 @@ func healthHandler(pool *pgxpool.Pool, st *store.FS) http.Handler {
 		} else {
 			details["db"] = "ok"
 		}
-		if err := os.MkdirAll(st.Root, 0750); err != nil {
+		if err := os.MkdirAll(storagePath, 0750); err != nil {
 			status = "degraded"
 			details["storage"] = err.Error()
 		} else {

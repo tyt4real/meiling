@@ -38,6 +38,9 @@ services:
       ACCESS_KEY_ID: ${SEED_ACCESS_KEY_ID:-AKIAIOSFODNN7EXAMPLE}
       SECRET_ACCESS_KEY: ${SEED_SECRET_ACCESS_KEY:-wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
       IPFS_NODE_ENDPOINTS: ${IPFS_NODE_ENDPOINTS:-http://ipfs-node-1:5001,http://ipfs-node-2:5001}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
+      IPFS_ENDPOINT: ${IPFS_ENDPOINT:-http://localhost:5001}
+      IPFS_CACHE_DIR: ${IPFS_CACHE_DIR:-/data/ipfs-cache}
     ports:
       - "8080:8080"
     volumes:
