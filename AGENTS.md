@@ -118,6 +118,27 @@ Set `STORAGE_BACKEND=ipfs` to store object content on IPFS instead of the local 
 
 **Important limitation:** the IPFS HTTP API's `/api/v0/cat` does not support byte-range reads. The first read of an uncached IPFS object streams the entire object into the local cache; subsequent reads (including ranges) are served from the cache. Range reads therefore do require a complete local copy on first access for IPFS-backed objects. This is documented, not hidden: the implementation never claims to fetch only the requested bytes from IPFS.
 
+## Web UI
+
+Meiling includes a server-rendered administration and user web UI at `/ui`, styled after
+https://lain.rocks/ (dark background, green accents, monospace typography, CRT
+scanlines).
+
+- `GET /ui/login` / `POST /ui/login` — cookie-based session login. Reuses the S3
+  seed credentials: account email (`demo@example.com`) and the S3 secret access
+  key as the "password".
+- `GET /ui/` — user dashboard: list buckets and navigate into them.
+- `GET /ui/bucket/<name>` — list objects in a bucket and upload new objects.
+- `GET /ui/object/<bucket>/<key>` — download/view an object.
+- `GET /ui/admin/` — admin dashboard (buckets + IPFS nodes summary).
+- `GET /ui/admin/nodes` — register and remove IPFS nodes.
+- `GET /ui/admin/pins` — list IPFS pins and their replica status.
+- `GET /ui/logout` — end the session.
+
+The UI authenticates via a signed session cookie (`meiling_session`). Set
+`UI_SECRET` to a strong random value for production; the default is insecure and
+only intended for local development.
+
 | Var | Default | Description |
 |-----|---------|-------------|
 | `LISTEN_ADDR` | `:8080` | HTTP listen address |
@@ -141,6 +162,7 @@ Set `STORAGE_BACKEND=ipfs` to store object content on IPFS instead of the local 
 | `IPFS_REPLICA_FACTOR` | `2` | Pin replica count |
 | `IPFS_RECONCILE_INTERVAL` | `10s` | Pin reconcile interval |
 | `IPFS_UPLOADS_ENABLED` | `false` | When true, PutObject/multipart add objects to a Kubo node and return the CID |
+| `UI_SECRET` | `` | Session cookie signing secret for the web UI (set a strong random value) |
 | `RATE_LIMIT_RPS` | `50` | Rate limit requests/sec |
 | `RATE_LIMIT_BURST` | `100` | Rate limit burst |
 | `CORS_ALLOW_ORIGINS` | `*` | Allowed CORS origins |
@@ -182,6 +204,7 @@ tables (migration `004_multipart_uploads.sql`) stage multipart uploads.
 - `internal/s3` — S3-compatible API (buckets, objects, XML responses)
 - `internal/security` — rate limiting, CORS, security headers, body limits
 - `internal/store` — pluggable object store (`ObjectStore` interface), filesystem + IPFS backends
+- `internal/ui` — server-rendered administration and user web UI at `/ui` (lain.rocks aesthetic)
 - `internal/validation` — CID + key + bucket name validation
 
 ## rclone + Navidrome example

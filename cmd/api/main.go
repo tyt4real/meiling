@@ -21,6 +21,7 @@ import (
 	"meiling/internal/s3"
 	"meiling/internal/security"
 	"meiling/internal/store"
+	"meiling/internal/ui"
 )
 
 func main() {
@@ -104,6 +105,9 @@ func main() {
 	}
 	ipfsHandler := ipfs.IPFSHandler(pool, dist, reg)
 
+	// Web UI (cookie-based, separate from SigV4 S3 API).
+	uiServer := ui.New(cfg.UISecret, pool, st, reg, cfg.PublicHost)
+
 	// Wrap S3 with SigV4 auth.
 	authMW := &auth.Middleware{
 		Next: s3Handler,
@@ -130,6 +134,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", secMW)
 	mux.Handle("/ipfs/", ipfsHandler)
+	uiServer.Route(mux)
 	mux.Handle("/healthz", healthHandler(pool, cfg.StoragePath))
 	if cfg.MetricsEnabled {
 		mux.Handle("/metrics", reg.Handler())

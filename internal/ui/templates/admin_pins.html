@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>meiling — admin / ipfs pins</title>
+<link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+<div class="shell">
+  <div class="header">
+    <div class="logo">meiling</div>
+    <div class="nav">
+      <a href="/ui/admin/">admin</a>
+      <a href="/ui/logout">sign out</a>
+      <span class="user-badge">{{.Account}}</span>
+    </div>
+  </div>
+
+  <div class="page-title">ipfs pins</div>
+
+  <div class="section">
+    <div class="section-title">tracked pins</div>
+    {{if .Pins}}
+    <table>
+      <thead>
+        <tr><th>cid</th><th>name</th><th>status</th><th>size</th><th>replicas</th><th>created</th><th>actions</th></tr>
+      </thead>
+      <tbody>
+        {{range .Pins}}
+        <tr>
+          <td class="mono" style="font-size:10px;">{{.CID}}</td>
+          <td class="mono" style="font-size:10px;">{{if .Name}}{{.Name}}{{else}}—{{end}}</td>
+          <td><span class="badge {{if eq .Status "pinned"}}pinned{{else if eq .Status "failed"}}failed{{else if eq .Status "pinning"}}pinning{{else}}queued{{end}}">{{.Status}}</span></td>
+          <td class="size">{{.Size}}</td>
+          <td class="mono" style="font-size:10px;">{{.ReplicaFactor}}</td>
+          <td class="mono">{{.CreatedAt}}</td>
+          <td>
+            <form method="post" action="/ui/admin/pins/{{.RequestID}}/delete" style="display:inline;" onsubmit="return confirm('unpin {{.CID}}?');">
+              <button type="submit" class="danger" style="font-size:11px;padding:2px 6px;">unpin</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">no pins tracked.</div>
+    {{end}}
+  </div>
+</div>
+</body>
+</html>

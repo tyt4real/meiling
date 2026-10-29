@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>meiling — admin</title>
+<link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+<div class="shell">
+  <div class="header">
+    <div class="logo">meiling</div>
+    <div class="nav">
+      <a href="/ui/">user dashboard</a>
+      <a href="/ui/logout">sign out</a>
+      <span class="user-badge">{{.Account}}</span>
+    </div>
+  </div>
+
+  <div class="page-title">administration</div>
+
+  <div class="admin-grid">
+    <div class="admin-card">
+      <h3>buckets</h3>
+      <p>{{if .Buckets}}{{len .Buckets}} total{{else}}none{{end}}</p>
+      <a href="/ui/" class="ghost">manage</a>
+    </div>
+    <div class="admin-card">
+      <h3>ipfs nodes</h3>
+      <p>{{if .Nodes}}{{len .Nodes}} registered{{else}}none{{end}}</p>
+      <a href="/ui/admin/nodes" class="ghost">manage</a>
+    </div>
+    <div class="admin-card">
+      <h3>ipfs pins</h3>
+      <p>tracked replicas</p>
+      <a href="/ui/admin/pins" class="ghost">manage</a>
+    </div>
+  </div>
+
+  <div class="section" style="margin-top:32px;">
+    <div class="section-title">recent activity</div>
+    <div class="empty">activity stream not yet wired.</div>
+  </div>
+</div>
+</body>
+</html>

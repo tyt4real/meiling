@@ -500,6 +500,11 @@ func CreateNode(ctx context.Context, q *pgxpool.Pool, apiEndpoint string, peerID
 	return &n, nil
 }
 
+func DeleteNode(ctx context.Context, q *pgxpool.Pool, nodeID uuid.UUID) error {
+	_, err := q.Exec(ctx, `DELETE FROM ipfs_nodes WHERE id=$1`, nodeID)
+	return err
+}
+
 func ListReplicasForPin(ctx context.Context, q *pgxpool.Pool, pinID uuid.UUID) ([]IPFSPinReplica, error) {
 	rows, err := q.Query(ctx, `SELECT id, pin_id, node_id, status, created_at, updated_at FROM ipfs_pin_replicas WHERE pin_id=$1 ORDER BY created_at ASC`, pinID)
 	if err != nil {
@@ -555,5 +560,27 @@ func ListPinsWithReplicas(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UU
 		}
 	}
 	return pins, total, nil
+}
+
+// GetBucketIDByName returns the bucket id for a name.
+func GetBucketIDByName(ctx context.Context, pool *pgxpool.Pool, name string) (uuid.UUID, error) {
+	b, err := GetBucketByName(ctx, pool, name)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return b.ID, nil
+}
+
+// GetAccessKeyByAccount returns the first access key for an account.
+func GetAccessKeyByAccount(ctx context.Context, pool *pgxpool.Pool, accountID uuid.UUID) (*AccessKey, error) {
+	var k AccessKey
+	err := pool.QueryRow(ctx,
+		`SELECT id, account_id, bucket_id, access_key_id, secret_access_key, status, created_at
+		 FROM access_keys WHERE account_id=$1 LIMIT 1`, accountID).
+		Scan(&k.ID, &k.AccountID, &k.BucketID, &k.AccessKeyID, &k.SecretAccessKey, &k.Status, &k.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &k, nil
 }
 

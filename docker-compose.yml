@@ -41,6 +41,7 @@ services:
       STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
       IPFS_ENDPOINT: ${IPFS_ENDPOINT:-http://localhost:5001}
       IPFS_CACHE_DIR: ${IPFS_CACHE_DIR:-/data/ipfs-cache}
+      UI_SECRET: ${UI_SECRET:-}
     ports:
       - "8080:8080"
     volumes:

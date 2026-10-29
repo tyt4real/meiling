@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>meiling — admin / ipfs nodes</title>
+<link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+<div class="shell">
+  <div class="header">
+    <div class="logo">meiling</div>
+    <div class="nav">
+      <a href="/ui/admin/">admin</a>
+      <a href="/ui/logout">sign out</a>
+      <span class="user-badge">{{.Account}}</span>
+    </div>
+  </div>
+
+  <div class="page-title">ipfs nodes</div>
+
+  <div class="section">
+    <div class="section-title">registered nodes</div>
+    {{if .Nodes}}
+    <table>
+      <thead>
+        <tr><th>endpoint</th><th>peer id</th><th>status</th><th>capacity</th><th>created</th><th>actions</th></tr>
+      </thead>
+      <tbody>
+        {{range .Nodes}}
+        <tr>
+          <td class="mono">{{.APIEndpoint}}</td>
+          <td class="mono" style="font-size:10px;">{{if .PeerID}}{{.PeerID}}{{else}}—{{end}}</td>
+          <td><span class="badge {{if eq .Status "healthy"}}active{{else}}inactive{{end}}">{{.Status}}</span></td>
+          <td class="size">{{.CapacityUsed}} / {{.CapacityTotal}}</td>
+          <td class="mono">{{.CreatedAt}}</td>
+          <td>
+            <form method="post" action="/ui/admin/nodes/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('remove node?');">
+              <button type="submit" class="danger" style="font-size:11px;padding:2px 6px;">remove</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">no ipfs nodes registered.</div>
+    {{end}}
+  </div>
+
+  <div class="section" style="margin-top:32px;">
+    <div class="section-title">register node</div>
+    <div class="form-card" style="max-width:460px;">
+      <form method="post" action="/ui/admin/nodes/add">
+        <label for="nodeendpoint">api endpoint</label>
+        <input id="nodeendpoint" name="endpoint" type="text" placeholder="http://ipfs-node-1:5001" required style="width:100%; margin-bottom:8px; display:block;">
+        <label for="nodepeerid">peer id (optional)</label>
+        <input id="nodepeerid" name="peerid" type="text" placeholder="12D3KooW..." style="width:100%; margin-bottom:16px; display:block;">
+        <div class="form-actions">
+          <button type="submit">register</button>
+          <a href="/ui/admin/" class="ghost">cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>

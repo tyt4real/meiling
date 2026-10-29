@@ -42,6 +42,9 @@ type Config struct {
 	IPFSReconcileInterval time.Duration
 	IPFSUploadsEnabled  bool // when true, PutObject ingests uploads to an IPFS node
 
+	// UI
+	UISecret string // session cookie signing secret
+
 	// Security
 	RateLimitRPS     float64
 	RateLimitBurst   int
@@ -77,6 +80,7 @@ func Load() (*Config, error) {
 		IPFSReplicaFactor:   getInt("IPFS_REPLICA_FACTOR", "2"),
 		IPFSReconcileInterval: getDuration("IPFS_RECONCILE_INTERVAL", "10s"),
 		IPFSUploadsEnabled:  getBool("IPFS_UPLOADS_ENABLED", "false"),
+		UISecret:            getEnv("UI_SECRET", ""),
 		RateLimitRPS:      getFloat("RATE_LIMIT_RPS", "50"),
 		RateLimitBurst:    getInt("RATE_LIMIT_BURST", "100"),
 		CORSAllowOrigins:  splitEnv("CORS_ALLOW_ORIGINS", "*"),

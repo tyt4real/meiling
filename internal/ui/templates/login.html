@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>meiling — login</title>
+<link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+<div class="shell">
+  <div class="header">
+    <div class="logo">meiling</div>
+    <div class="nav">
+      <a href="/">api root</a>
+      <a href="/healthz">health</a>
+      <a href="/metrics">metrics</a>
+    </div>
+  </div>
+
+  <div class="form-card" style="max-width: 420px; margin: 0 auto;">
+    <div class="page-title" style="text-align:center;">session start</div>
+    {{if .Error}}
+    <div class="flash">{{.Error}}</div>
+    {{end}}
+    <form method="post" action="/ui/login">
+      <label for="email">account email</label>
+      <input id="email" name="email" type="email" placeholder="demo@example.com" required>
+
+      <label for="password">access secret (S3 secret key)</label>
+      <input id="password" name="password" type="password" placeholder="wJalrXUtnFEMI/..." required>
+
+      <div class="form-actions">
+        <button type="submit">connect</button>
+        <a href="/" class="ghost">api endpoint</a>
+      </div>
+    </form>
+    <p style="margin-top:14px; font-size:11px; color:var(--fg-dim); text-align:center;">
+      credentials are the S3 seed access key / secret key.<br>
+      demo: AKIAIOSFODNN7EXAMPLE / wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    </p>
+  </div>
+</div>
+</body>
+</html>

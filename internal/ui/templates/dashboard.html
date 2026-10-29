@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>meiling — dashboard</title>
+<link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+<div class="shell">
+  <div class="header">
+    <div class="logo">meiling</div>
+    <div class="nav">
+      <a href="/ui/logout">sign out</a>
+      <span class="user-badge">{{.Account}}</span>
+      {{if eq .Account "demo@example.com"}}
+      <a href="/ui/admin/" style="color:var(--accent);">admin</a>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="page-title">object storage</div>
+
+  {{if .Buckets}}
+  <div class="section">
+    <div class="section-title">buckets</div>
+    <table>
+      <thead>
+        <tr><th>name</th><th>created</th><th>action</th></tr>
+      </thead>
+      <tbody>
+        {{range .Buckets}}
+        <tr>
+          <td class="mono">{{.Name}}</td>
+          <td class="mono">{{.CreatedAt}}</td>
+          <td><a href="/ui/bucket/{{.Name}}" class="ghost">open</a></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty">no buckets found.</div>
+  {{end}}
+
+  <div class="section" style="margin-top:32px;">
+    <div class="section-title">create bucket</div>
+    <form method="post" action="/ui/bucket/create" style="display:inline;">
+      <label for="newbucket">bucket name</label>
+      <input id="newbucket" name="bucket" type="text" placeholder="my-bucket" required style="width:220px;">
+      <button type="submit">create</button>
+    </form>
+    <p style="margin-top:8px; font-size:11px; color:var(--fg-dim);">3&ndash;63 chars, lowercase DNS-safe.</p>
+  </div>
+</div>
+</body>
+</html>
