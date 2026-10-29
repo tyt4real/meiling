@@ -396,7 +396,7 @@ func (a *ObjectAPI) CompleteMultipartUploadByName(w http.ResponseWriter, r *http
 		return
 	}
 
-	parts, err := db.ListMultipartParts(r.Context(), a.Pool, uploadID)
+	parts, err := db.ListMultipartParts(r.Context(), a.Pool, uploadID, 0, 0)
 	if err != nil {
 		errorResponse(w, http.StatusInternalServerError, "InternalError", "Could not list parts.", key)
 		return
@@ -984,4 +984,111 @@ func parseCopySource(s string) (string, string, error) {
 		return "", "", err
 	}
 	return srcBucket, srcKey, nil
+}
+
+// ListMultipartUploadsByName lists in-progress multipart uploads for a bucket.
+func (a *ObjectAPI) ListMultipartUploadsByName(w http.ResponseWriter, r *http.Request, accountID uuid.UUID, bucketName string) {
+	start := time.Now()
+	defer func() { a.Reg.HTTPRequestDuration.Observe(time.Since(start).Seconds()) }()
+	a.Reg.HTTPRequestsTotal.Inc(1)
+
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		errorResponse(w, http.StatusBadRequest, "InvalidBucketName", err.Error(), bucketName)
+		return
+	}
+
+	bucketID, err := bucketIDByName(a.Pool, r, bucketName)
+	if err != nil {
+		errorResponse(w, http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist.", bucketName)
+		return
+	}
+
+	q := r.URL.Query()
+	uploads, err := db.ListMultipartUploads(r.Context(), a.Pool, bucketID,
+		q.Get("prefix"), q.Get("key-marker"), q.Get("upload-id-marker"), 1000)
+	if err != nil {
+		slog.Error("list multipart uploads failed", "bucket", bucketName, "error", err)
+		http.Error(w, "failed to list multipart uploads", http.StatusInternalServerError)
+		return
+	}
+
+	uploadsOut := make([]Upload, 0, len(uploads))
+	for _, u := range uploads {
+		uploadsOut = append(uploadsOut, Upload{
+			UploadId:   u.UploadID,
+			Key:        u.Key,
+			Initiated:  isoTime(u.CreatedAt),
+			StorageClass: "STANDARD",
+			Owner: &Owner{
+				ID:          accountID.String(),
+				DisplayName: accountID.String(),
+			},
+		})
+	}
+
+	xmlResponse(w, http.StatusOK, ListMultipartUploadsResult{
+		Bucket:           bucketName,
+		KeyMarker:        q.Get("key-marker"),
+		UploadIdMarker:   q.Get("upload-id-marker"),
+		MaxKeys:          1000,
+		IsTruncated:      len(uploads) == 1000,
+		Uploads:          uploadsOut,
+	})
+}
+
+// ListPartsByName lists the parts of a multipart upload.
+func (a *ObjectAPI) ListPartsByName(w http.ResponseWriter, r *http.Request, accountID uuid.UUID, bucketName, key string) {
+	start := time.Now()
+	defer func() { a.Reg.HTTPRequestDuration.Observe(time.Since(start).Seconds()) }()
+	a.Reg.HTTPRequestsTotal.Inc(1)
+
+	if err := validation.ValidateBucketName(bucketName); err != nil {
+		errorResponse(w, http.StatusBadRequest, "InvalidBucketName", err.Error(), bucketName)
+		return
+	}
+	if err := validation.ValidateObjectKey(key); err != nil {
+		errorResponse(w, http.StatusBadRequest, "InvalidKey", err.Error(), key)
+		return
+	}
+
+	bucketID, err := bucketIDByName(a.Pool, r, bucketName)
+	if err != nil {
+		errorResponse(w, http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist.", bucketName)
+		return
+	}
+	_ = bucketID
+
+	q := r.URL.Query()
+	uploadID := q.Get("uploadId")
+	partNumberMarker := 0
+	if v := q.Get("part-number-marker"); v != "" {
+		fmt.Sscanf(v, "%d", &partNumberMarker)
+	}
+
+	parts, err := db.ListMultipartParts(r.Context(), a.Pool, uploadID, partNumberMarker, 1000)
+	if err != nil {
+		slog.Error("list parts failed", "bucket", bucketName, "key", key, "error", err)
+		http.Error(w, "failed to list parts", http.StatusInternalServerError)
+		return
+	}
+
+	partsOut := make([]ListPart, 0, len(parts))
+	for _, p := range parts {
+		partsOut = append(partsOut, ListPart{
+			PartNumber:   p.PartNumber,
+			LastModified: isoTime(time.Now()),
+			ETag:         p.ETag,
+			Size:         p.Size,
+		})
+	}
+
+	xmlResponse(w, http.StatusOK, ListPartsResult{
+		Bucket:            bucketName,
+		Key:               key,
+		UploadId:          uploadID,
+		PartNumberMarker:  partNumberMarker,
+		MaxParts:          1000,
+		IsTruncated:       len(parts) == 1000,
+		Parts:             partsOut,
+	})
 }

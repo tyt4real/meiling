@@ -41,11 +41,21 @@ func S3Handler(pool *pgxpool.Pool, st store.ObjectStore, storageRoot string, ipf
 				return
 			}
 			if key == "" {
-				if r.URL.Query().Get("location") != "" {
+				q := r.URL.Query()
+				if q.Get("location") != "" {
 					bAPI.GetBucketLocation(w, r, bucketName)
 					return
 				}
+				if _, ok := q["uploads"]; ok {
+					oAPI.ListMultipartUploadsByName(w, r, accountID, bucketName)
+					return
+				}
 				oAPI.ListObjectsV2ByName(w, r, accountID, bucketName)
+				return
+			}
+			q := r.URL.Query()
+			if q.Get("uploadId") != "" {
+				oAPI.ListPartsByName(w, r, accountID, bucketName, key)
 				return
 			}
 			oAPI.GetObjectByName(w, r, accountID, bucketName, key)

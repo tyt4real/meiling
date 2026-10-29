@@ -120,6 +120,50 @@ type DeleteResult struct {
 	Deleted []DeletedObject `xml:"Deleted,omitempty"`
 }
 
+// List multipart uploads XML types.
+
+type ListMultipartUploadsResult struct {
+	XMLName         xml.Name `xml:"ListMultipartUploadsResult"`
+	Bucket          string   `xml:"Bucket"`
+	KeyMarker       string   `xml:"KeyMarker,omitempty"`
+	UploadIdMarker  string   `xml:"UploadIdMarker,omitempty"`
+	NextKeyMarker   string   `xml:"NextKeyMarker,omitempty"`
+	NextUploadIdMarker string  `xml:"NextUploadIdMarker,omitempty"`
+	MaxKeys         int      `xml:"MaxKeys,omitempty"`
+	IsTruncated     bool     `xml:"IsTruncated"`
+	Uploads         []Upload `xml:"Upload,omitempty"`
+}
+
+type Upload struct {
+	UploadId   string    `xml:"UploadId"`
+	Key        string    `xml:"Key"`
+	Initiated  string    `xml:"Initiated"`
+	StorageClass string  `xml:"StorageClass,omitempty"`
+	Owner      *Owner    `xml:"Owner,omitempty"`
+}
+
+// List parts XML types.
+
+type ListPartsResult struct {
+	XMLName           xml.Name `xml:"ListPartsResult"`
+	Bucket            string   `xml:"Bucket"`
+	Key               string   `xml:"Key"`
+	UploadId          string   `xml:"UploadId"`
+	PartNumberMarker  int      `xml:"PartNumberMarker,omitempty"`
+	NextPartNumberMarker int    `xml:"NextPartNumberMarker,omitempty"`
+	MaxParts          int      `xml:"MaxParts,omitempty"`
+	IsTruncated       bool     `xml:"IsTruncated"`
+	Parts             []ListPart `xml:"Part,omitempty"`
+}
+
+type ListPart struct {
+	PartNumber   int    `xml:"PartNumber"`
+	LastModified string `xml:"LastModified"`
+	ETag         string `xml:"ETag"`
+	Size         int64  `xml:"Size"`
+	Owner        *Owner `xml:"Owner,omitempty"`
+}
+
 func xmlResponse(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(status)

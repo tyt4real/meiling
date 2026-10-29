@@ -447,3 +447,156 @@ func md5Sum(s string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+func TestS3ListMultipartUploads(t *testing.T) {
+	server := buildServer()
+	defer server.Close()
+
+	acc, err := db.CreateAccount(context.Background(), s3testPool, "lmu-"+uuid.New().String()[:8]+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bucket := "lmu-bucket-" + uuid.New().String()[:8]
+	b, err := db.CreateBucket(context.Background(), s3testPool, acc.ID, bucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak := "LMUAK" + uuid.New().String()[:8]
+	sk := "LMUSK" + uuid.New().String()[:8]
+	if _, err := db.CreateAccessKey(context.Background(), s3testPool, acc.ID, &b.ID, ak, sk); err != nil {
+		t.Fatal(err)
+	}
+
+	key1 := "multipart1.bin"
+	key2 := "multipart2.bin"
+	key3 := "multipart3.bin"
+
+	// Initiate three multipart uploads.
+	var uploadIDs []string
+	for _, key := range []string{key1, key2, key3} {
+		req, err := sigv4Request(t, ak, sk, "POST", "/"+bucket+"/"+key, nil, url.Values{"uploads": {""}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp := doReq(t, server, req)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("create multipart upload: %d", resp.StatusCode)
+		}
+		var initResp struct {
+			UploadId string `xml:"UploadId"`
+		}
+		if err := xml.NewDecoder(resp.Body).Decode(&initResp); err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if initResp.UploadId == "" {
+			t.Fatal("expected upload id")
+		}
+		uploadIDs = append(uploadIDs, initResp.UploadId)
+	}
+
+	// List multipart uploads.
+	req, err := sigv4Request(t, ak, sk, "GET", "/"+bucket, nil, url.Values{"uploads": {""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := doReq(t, server, req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list multipart uploads: %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	bodyStr := string(body)
+
+	// All three upload IDs should appear in the listing.
+	for _, uid := range uploadIDs {
+		if !strings.Contains(bodyStr, uid) {
+			t.Errorf("list multipart uploads should contain upload ID %s, got: %s", uid, bodyStr)
+		}
+	}
+	// All three keys should appear.
+	for _, key := range []string{key1, key2, key3} {
+		if !strings.Contains(bodyStr, key) {
+			t.Errorf("list multipart uploads should contain key %s, got: %s", key, bodyStr)
+		}
+	}
+}
+
+func TestS3ListParts(t *testing.T) {
+	server := buildServer()
+	defer server.Close()
+
+	acc, err := db.CreateAccount(context.Background(), s3testPool, "lp-"+uuid.New().String()[:8]+"@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bucket := "lp-bucket-" + uuid.New().String()[:8]
+	b, err := db.CreateBucket(context.Background(), s3testPool, acc.ID, bucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ak := "LPAK" + uuid.New().String()[:8]
+	sk := "LPSK" + uuid.New().String()[:8]
+	if _, err := db.CreateAccessKey(context.Background(), s3testPool, acc.ID, &b.ID, ak, sk); err != nil {
+		t.Fatal(err)
+	}
+
+	key := "multipart.bin"
+	part1 := strings.Repeat("aaa", 100)   // 300 bytes
+	part2 := strings.Repeat("bbb", 100)   // 300 bytes
+	part3 := strings.Repeat("ccc", 100)   // 300 bytes
+
+	// Initiate multipart upload.
+	req, err := sigv4Request(t, ak, sk, "POST", "/"+bucket+"/"+key, nil, url.Values{"uploads": {""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := doReq(t, server, req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create multipart upload: %d", resp.StatusCode)
+	}
+	var initResp struct {
+		UploadId string `xml:"UploadId"`
+	}
+	if err := xml.NewDecoder(resp.Body).Decode(&initResp); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if initResp.UploadId == "" {
+		t.Fatal("expected upload id")
+	}
+
+	// Upload parts.
+	e1 := uploadPart(t, server, ak, sk, bucket, key, initResp.UploadId, 1, part1)
+	e2 := uploadPart(t, server, ak, sk, bucket, key, initResp.UploadId, 2, part2)
+	e3 := uploadPart(t, server, ak, sk, bucket, key, initResp.UploadId, 3, part3)
+
+	// List parts.
+	req, err = sigv4Request(t, ak, sk, "GET", "/"+bucket+"/"+key, nil, url.Values{"uploadId": {initResp.UploadId}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp = doReq(t, server, req)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list parts: %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	bodyStr := string(body)
+
+	// All three part numbers and ETags should appear.
+	expectedParts := []struct {
+		partNumber int
+		eTag       string
+	}{{1, e1}, {2, e2}, {3, e3}}
+	for _, p := range expectedParts {
+		partStr := fmt.Sprintf("<PartNumber>%d</PartNumber>", p.partNumber)
+		if !strings.Contains(bodyStr, partStr) {
+			t.Errorf("list parts should contain part number %d, got: %s", p.partNumber, bodyStr)
+		}
+		etagStr := fmt.Sprintf("<ETag>%s</ETag>", p.eTag)
+		if !strings.Contains(bodyStr, etagStr) {
+			t.Errorf("list parts should contain ETag %s, got: %s", p.eTag, bodyStr)
+		}
+	}
+}
+

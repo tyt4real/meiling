@@ -290,10 +290,23 @@ func GetMultipartUpload(ctx context.Context, q *pgxpool.Pool, uploadID string) (
 }
 
 // ListMultipartParts returns the parts of a multipart upload ordered by part number.
-func ListMultipartParts(ctx context.Context, q *pgxpool.Pool, uploadID string) ([]MultipartPart, error) {
-	rows, err := q.Query(ctx,
-		`SELECT upload_id, part_number, size, etag
-		 FROM multipart_parts WHERE upload_id=$1 ORDER BY part_number ASC`, uploadID)
+// Supports partNumberMarker and limit for pagination (0 means no filter).
+func ListMultipartParts(ctx context.Context, q *pgxpool.Pool, uploadID string, partNumberMarker int, limit int) ([]MultipartPart, error) {
+	query := `SELECT upload_id, part_number, size, etag
+		 FROM multipart_parts WHERE upload_id=$1`
+	args := []any{uploadID}
+	argIdx := 2
+	if partNumberMarker > 0 {
+		query += ` AND part_number > $` + string(rune('0'+argIdx))
+		args = append(args, partNumberMarker)
+		argIdx++
+	}
+	query += ` ORDER BY part_number ASC`
+	if limit > 0 {
+		query += ` LIMIT $` + string(rune('0'+argIdx))
+		args = append(args, limit)
+	}
+	rows, err := q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -331,6 +344,46 @@ func OldestMultipartUploads(ctx context.Context, q *pgxpool.Pool, cutoff time.Ti
 		`SELECT id, upload_id, bucket_id, key, content_type, user_metadata, created_at
 		 FROM multipart_uploads WHERE created_at < $1 ORDER BY created_at ASC LIMIT $2`,
 		cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MultipartUpload
+	for rows.Next() {
+		var mu MultipartUpload
+		if err := rows.Scan(&mu.ID, &mu.UploadID, &mu.BucketID, &mu.Key, &mu.ContentType, &mu.UserMetadata, &mu.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, mu)
+	}
+	return out, rows.Err()
+}
+
+// ListMultipartUploads lists in-progress multipart uploads for a bucket.
+// Supports prefix, key-marker, upload-id-marker, and max-keys for pagination.
+func ListMultipartUploads(ctx context.Context, q *pgxpool.Pool, bucketID uuid.UUID, prefix, keyMarker, uploadIDMarker string, limit int) ([]MultipartUpload, error) {
+	query := `SELECT id, upload_id, bucket_id, key, content_type, user_metadata, created_at
+		 FROM multipart_uploads WHERE bucket_id=$1`
+	args := []any{bucketID}
+	argIdx := 2
+	if prefix != "" {
+		query += ` AND key >= $` + string(rune('0'+argIdx))
+		args = append(args, prefix)
+		argIdx++
+	}
+	if keyMarker != "" {
+		query += ` AND key > $` + string(rune('0'+argIdx))
+		args = append(args, keyMarker)
+		argIdx++
+	}
+	if uploadIDMarker != "" {
+		query += ` AND upload_id > $` + string(rune('0'+argIdx))
+		args = append(args, uploadIDMarker)
+		argIdx++
+	}
+	query += ` ORDER BY key ASC, upload_id ASC LIMIT $` + string(rune('0'+argIdx))
+	args = append(args, limit)
+	rows, err := q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
