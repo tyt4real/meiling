@@ -41,7 +41,18 @@ type Session struct {
 	ID        string
 	AccountID uuid.UUID
 	Email     string
+	Role      string
 	CreatedAt time.Time
+}
+
+// IsAdmin returns true if the session belongs to an admin account.
+func (s *Session) IsAdmin() bool {
+	return s.Role == db.RoleAdmin
+}
+
+// IsUser returns true if the session belongs to a user account.
+func (s *Session) IsUser() bool {
+	return s.Role == db.RoleUser || s.Role == ""
 }
 
 // memoryStore holds sessions in memory. Good enough for a single-process
@@ -278,6 +289,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		ID:        newSessionID(),
 		AccountID: acc.ID,
 		Email:     acc.Email,
+		Role:      acc.Role,
 		CreatedAt: time.Now(),
 	}
 	s.issueSession(w, sess)
@@ -529,6 +541,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, sess *Sess
 
 // handleAdmin serves the admin section.
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, sess *Session) {
+	if !sess.IsAdmin() {
+		http.Error(w, "admin access required", http.StatusForbidden)
+		return
+	}
 	switch {
 	case r.URL.Path == "/ui/admin/":
 		s.handleAdminDashboard(w, r, sess)
@@ -548,7 +564,13 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, sess *Sessi
 }
 
 func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request, sess *Session) {
-	buckets, err := db.ListBuckets(r.Context(), s.Pool, sess.AccountID)
+	var buckets []db.Bucket
+	var err error
+	if sess.IsAdmin() {
+		buckets, err = db.ListAllBuckets(r.Context(), s.Pool)
+	} else {
+		buckets, err = db.ListBuckets(r.Context(), s.Pool, sess.AccountID)
+	}
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -563,6 +585,7 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request, se
 		"Buckets": buckets,
 		"Nodes":   nodes,
 		"BaseURL": s.BaseURL,
+		"IsAdmin": sess.IsAdmin(),
 	})
 }
 
@@ -630,7 +653,13 @@ func (s *Server) handleAdminNodeAction(w http.ResponseWriter, r *http.Request, s
 }
 
 func (s *Server) handleAdminPins(w http.ResponseWriter, r *http.Request, sess *Session) {
-	pins, _, err := db.ListPins(r.Context(), s.Pool, sess.AccountID, nil, time.Time{}, time.Time{}, 100)
+	var pins []db.IPFSPin
+	var err error
+	if sess.IsAdmin() {
+		pins, _, err = db.ListPins(r.Context(), s.Pool, uuid.Nil, nil, time.Time{}, time.Time{}, 100)
+	} else {
+		pins, _, err = db.ListPins(r.Context(), s.Pool, sess.AccountID, nil, time.Time{}, time.Time{}, 100)
+	}
 	if err != nil {
 		slog.Error("ui: list pins", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -640,6 +669,7 @@ func (s *Server) handleAdminPins(w http.ResponseWriter, r *http.Request, sess *S
 		"Account": sess.Email,
 		"Pins":    pins,
 		"BaseURL": s.BaseURL,
+		"IsAdmin": sess.IsAdmin(),
 	})
 }
 
@@ -663,10 +693,68 @@ func (s *Server) handleAdminPinDelete(w http.ResponseWriter, r *http.Request, se
 }
 
 func (s *Server) handleAdminAccounts(w http.ResponseWriter, r *http.Request, sess *Session) {
+	if !sess.IsAdmin() {
+		http.Error(w, "admin access required", http.StatusForbidden)
+		return
+	}
+	if r.Method == http.MethodPost {
+		s.handleAdminAccountCreate(w, r, sess)
+		return
+	}
+	accounts, err := db.ListAccounts(r.Context(), s.Pool)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	s.render(w, r, "admin_accounts.html", map[string]interface{}{
-		"Account": sess.Email,
-		"BaseURL": s.BaseURL,
+		"Account":  sess.Email,
+		"Accounts": accounts,
+		"BaseURL":  s.BaseURL,
+		"IsAdmin":  sess.IsAdmin(),
 	})
+}
+
+func (s *Server) handleAdminAccountCreate(w http.ResponseWriter, r *http.Request, sess *Session) {
+	if !sess.IsAdmin() {
+		http.Error(w, "admin access required", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	email := strings.TrimSpace(r.Form.Get("email"))
+	role := strings.TrimSpace(r.Form.Get("role"))
+	if email == "" || role == "" {
+		s.render(w, r, "admin_accounts.html", map[string]interface{}{
+			"Account": sess.Email,
+			"Error":   "email and role are required",
+			"BaseURL": s.BaseURL,
+			"IsAdmin": sess.IsAdmin(),
+		})
+		return
+	}
+	if role != db.RoleAdmin && role != db.RoleUser {
+		s.render(w, r, "admin_accounts.html", map[string]interface{}{
+			"Account": sess.Email,
+			"Error":   "role must be 'admin' or 'user'",
+			"BaseURL": s.BaseURL,
+			"IsAdmin": sess.IsAdmin(),
+		})
+		return
+	}
+	_, err := db.CreateAccount(r.Context(), s.Pool, email, role)
+	if err != nil {
+		slog.Error("ui: create account", "error", err)
+		s.render(w, r, "admin_accounts.html", map[string]interface{}{
+			"Account": sess.Email,
+			"Error":   "could not create account",
+			"BaseURL": s.BaseURL,
+			"IsAdmin": sess.IsAdmin(),
+		})
+		return
+	}
+	http.Redirect(w, r, "/ui/admin/accounts", http.StatusFound)
 }
 
 // render executes a named template with the given data.

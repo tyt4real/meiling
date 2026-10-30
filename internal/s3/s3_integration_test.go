@@ -43,7 +43,8 @@ func TestMain(m *testing.M) {
 	defer s3testPool.Close()
 
 	const schema = `
-CREATE TABLE IF NOT EXISTS accounts (id UUID PRIMARY KEY, email TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS accounts (id UUID PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT NOT NULL DEFAULT 'user', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 CREATE TABLE IF NOT EXISTS buckets (id UUID PRIMARY KEY, account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, name TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS access_keys (id UUID PRIMARY KEY, account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, bucket_id UUID REFERENCES buckets(id) ON DELETE CASCADE, access_key_id TEXT UNIQUE NOT NULL, secret_access_key TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS objects (id UUID PRIMARY KEY, bucket_id UUID NOT NULL REFERENCES buckets(id) ON DELETE CASCADE, key TEXT NOT NULL, data_path TEXT NOT NULL, size BIGINT NOT NULL, content_type TEXT, etag TEXT NOT NULL, cid TEXT, ipfs_status TEXT NOT NULL DEFAULT 'none', user_metadata JSONB NOT NULL DEFAULT '{}', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (bucket_id, key));
@@ -164,7 +165,7 @@ func TestS3FullFlow(t *testing.T) {
 	server := buildServer()
 	defer server.Close()
 
-	acc, err := db.CreateAccount(context.Background(), s3testPool, "flow-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(context.Background(), s3testPool, db.RoleUser, "flow-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +294,7 @@ func TestS3MultipartUploadComplete(t *testing.T) {
 	server := buildServer()
 	defer server.Close()
 
-	acc, err := db.CreateAccount(context.Background(), s3testPool, "mp-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(context.Background(), s3testPool, db.RoleUser, "mp-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +384,7 @@ func TestS3MultipartUploadAbort(t *testing.T) {
 	server := buildServer()
 	defer server.Close()
 
-	acc, err := db.CreateAccount(context.Background(), s3testPool, "mpa-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(context.Background(), s3testPool, db.RoleUser, "mpa-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +452,7 @@ func TestS3ListMultipartUploads(t *testing.T) {
 	server := buildServer()
 	defer server.Close()
 
-	acc, err := db.CreateAccount(context.Background(), s3testPool, "lmu-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(context.Background(), s3testPool, db.RoleUser, "lmu-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +526,7 @@ func TestS3ListParts(t *testing.T) {
 	server := buildServer()
 	defer server.Close()
 
-	acc, err := db.CreateAccount(context.Background(), s3testPool, "lp-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(context.Background(), s3testPool, db.RoleUser, "lp-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

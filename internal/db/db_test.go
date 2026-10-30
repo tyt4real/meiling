@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 
 func TestAccountAndBucketCRUD(t *testing.T) {
 	ctx := context.Background()
-	acc, err := db.CreateAccount(ctx, dbtestPool, "crud-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(ctx, dbtestPool, db.RoleUser, "crud-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestAccountAndBucketCRUD(t *testing.T) {
 
 func TestAccessKeyCRUD(t *testing.T) {
 	ctx := context.Background()
-	acc, err := db.CreateAccount(ctx, dbtestPool, "key-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(ctx, dbtestPool, db.RoleUser, "key-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,8 +15,25 @@ type Pool = pgxpool.Pool
 type Account struct {
 	ID        uuid.UUID
 	Email     string
+	Role      string
 	CreatedAt time.Time
 }
+
+// IsAdmin returns true if the account has the admin role.
+func (a *Account) IsAdmin() bool {
+	return a.Role == RoleAdmin
+}
+
+// IsUser returns true if the account has the user role.
+func (a *Account) IsUser() bool {
+	return a.Role == RoleUser || a.Role == ""
+}
+
+// RoleAdmin is the admin role constant.
+const RoleAdmin = "admin"
+
+// RoleUser is the user role constant.
+const RoleUser = "user"
 
 type AccessKey struct {
 	ID               uuid.UUID
@@ -71,14 +88,22 @@ func Connect(ctx context.Context, url string) (*Pool, error) {
 	return pgxpool.New(ctx, url)
 }
 
-func CreateAccount(ctx context.Context, q *pgxpool.Pool, email string) (*Account, error) {
+func CreateAccount(ctx context.Context, q *pgxpool.Pool, email string, role string) (*Account, error) {
 	id := uuid.New()
 	var a Account
 	err := q.QueryRow(ctx,
-		`INSERT INTO accounts (id, email) VALUES ($1, $2)
-		 RETURNING id, email, created_at`,
-		id, email).Scan(&a.ID, &a.Email, &a.CreatedAt)
+		`INSERT INTO accounts (id, email, role) VALUES ($1, $2, $3)
+		 RETURNING id, email, role, created_at`,
+		id, email, role).Scan(&a.ID, &a.Email, &a.Role, &a.CreatedAt)
 	if err != nil {
+		// If email already exists, return the existing account
+		var existing Account
+		err2 := q.QueryRow(ctx,
+			`SELECT id, email, role, created_at FROM accounts WHERE email=$1`,
+			email).Scan(&existing.ID, &existing.Email, &existing.Role, &existing.CreatedAt)
+		if err2 == nil {
+			return &existing, nil
+		}
 		return nil, err
 	}
 	return &a, nil
@@ -86,12 +111,47 @@ func CreateAccount(ctx context.Context, q *pgxpool.Pool, email string) (*Account
 
 func GetAccountByEmail(ctx context.Context, q *pgxpool.Pool, email string) (*Account, error) {
 	var a Account
-	err := q.QueryRow(ctx, `SELECT id, email, created_at FROM accounts WHERE email=$1`, email).
-		Scan(&a.ID, &a.Email, &a.CreatedAt)
+	err := q.QueryRow(ctx, `SELECT id, email, role, created_at FROM accounts WHERE email=$1`, email).
+		Scan(&a.ID, &a.Email, &a.Role, &a.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &a, nil
+}
+
+// GetAccountByID returns an account by its ID.
+func GetAccountByID(ctx context.Context, q *pgxpool.Pool, id uuid.UUID) (*Account, error) {
+	var a Account
+	err := q.QueryRow(ctx, `SELECT id, email, role, created_at FROM accounts WHERE id=$1`, id).
+		Scan(&a.ID, &a.Email, &a.Role, &a.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// ListAccounts returns all accounts, ordered by created_at.
+func ListAccounts(ctx context.Context, q *pgxpool.Pool) ([]Account, error) {
+	rows, err := q.Query(ctx, `SELECT id, email, role, created_at FROM accounts ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Account
+	for rows.Next() {
+		var a Account
+		if err := rows.Scan(&a.ID, &a.Email, &a.Role, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// UpdateAccountRole updates an account's role.
+func UpdateAccountRole(ctx context.Context, q *pgxpool.Pool, id uuid.UUID, role string) error {
+	_, err := q.Exec(ctx, `UPDATE accounts SET role=$1 WHERE id=$2`, role, id)
+	return err
 }
 
 func CreateAccessKey(ctx context.Context, q *pgxpool.Pool, accountID uuid.UUID, bucketID *uuid.UUID, accessKeyID, secretAccessKey string) (*AccessKey, error) {
@@ -150,6 +210,24 @@ func GetBucketByName(ctx context.Context, q *pgxpool.Pool, name string) (*Bucket
 
 func ListBuckets(ctx context.Context, q *pgxpool.Pool, accountID uuid.UUID) ([]Bucket, error) {
 	rows, err := q.Query(ctx, `SELECT id, account_id, name, created_at FROM buckets WHERE account_id=$1 ORDER BY created_at DESC`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Bucket
+	for rows.Next() {
+		var b Bucket
+		if err := rows.Scan(&b.ID, &b.AccountID, &b.Name, &b.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// ListAllBuckets lists all buckets (admin only).
+func ListAllBuckets(ctx context.Context, q *pgxpool.Pool) ([]Bucket, error) {
+	rows, err := q.Query(ctx, `SELECT id, account_id, name, created_at FROM buckets ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}

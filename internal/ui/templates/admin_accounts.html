@@ -17,11 +17,50 @@
     </div>
   </div>
 
-  <div class="page-title">accounts</div>
+  <div class="page-title">account management</div>
 
   <div class="section">
-    <div class="section-title">registered accounts</div>
-    <div class="empty">account management not yet wired.</div>
+    <div class="section-title">create account</div>
+    <div class="form-card" style="max-width:460px;">
+      {{if .Error}}
+      <div class="flash">{{.Error}}</div>
+      {{end}}
+      <form method="post" action="/ui/admin/accounts">
+        <label for="email">account email</label>
+        <input id="email" name="email" type="email" placeholder="user@example.com" required style="width:100%; margin-bottom:8px; display:block;">
+        <label for="role">role</label>
+        <select id="role" name="role" style="width:100%; margin-bottom:8px; display:block;">
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+        <div class="form-actions">
+          <button type="submit">create account</button>
+          <a href="/ui/admin/" class="ghost">cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="section" style="margin-top:32px;">
+    <div class="section-title">existing accounts</div>
+    {{if .Accounts}}
+    <table>
+      <thead>
+        <tr><th>email</th><th>role</th><th>created</th></tr>
+      </thead>
+      <tbody>
+        {{range .Accounts}}
+        <tr>
+          <td class="mono">{{.Email}}</td>
+          <td><span class="badge {{if eq .Role "admin"}}active{{else}}inactive{{end}}">{{.Role}}</span></td>
+          <td class="mono">{{.CreatedAt}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">no accounts found.</div>
+    {{end}}
   </div>
 </div>
 </body>

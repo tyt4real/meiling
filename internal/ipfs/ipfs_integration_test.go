@@ -37,7 +37,8 @@ func TestMain(m *testing.M) {
 	defer ipfstestPool.Close()
 
 	const schema = `
-CREATE TABLE IF NOT EXISTS accounts (id UUID PRIMARY KEY, email TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS accounts (id UUID PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT NOT NULL DEFAULT 'user', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 CREATE TABLE IF NOT EXISTS buckets (id UUID PRIMARY KEY, account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, name TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS access_keys (id UUID PRIMARY KEY, account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, bucket_id UUID REFERENCES buckets(id) ON DELETE CASCADE, access_key_id TEXT UNIQUE NOT NULL, secret_access_key TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS ipfs_nodes (id UUID PRIMARY KEY, peer_id TEXT, api_endpoint TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'healthy', last_seen TIMESTAMPTZ, capacity_used BIGINT NOT NULL DEFAULT 0, capacity_total BIGINT NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
@@ -105,7 +106,7 @@ func TestIPFSFullFlow(t *testing.T) {
 	server := buildServer()
 	defer server.Close()
 
-	acc, err := db.CreateAccount(context.Background(), ipfstestPool, "ipfs-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(context.Background(), ipfstestPool, db.RoleUser, "ipfs-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

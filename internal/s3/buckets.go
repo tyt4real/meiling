@@ -18,15 +18,26 @@ type BucketAPI struct {
 	Reg  *metrics.Registry
 }
 
-func (a *BucketAPI) ListBuckets(w http.ResponseWriter, r *http.Request, accountID uuid.UUID) {
+func (a *BucketAPI) ListBuckets(w http.ResponseWriter, r *http.Request, accountID uuid.UUID, isAdmin bool) {
 	start := time.Now()
 	defer func() { a.Reg.HTTPRequestDuration.Observe(time.Since(start).Seconds()) }()
 	a.Reg.HTTPRequestsTotal.Inc(1)
 
-	buckets, err := db.ListBuckets(r.Context(), a.Pool, accountID)
-	if err != nil {
-		http.Error(w, "failed to list buckets", http.StatusInternalServerError)
-		return
+	var buckets []db.Bucket
+	var err error
+	if isAdmin {
+		// Admins can see all buckets.
+		buckets, err = db.ListAllBuckets(r.Context(), a.Pool)
+		if err != nil {
+			http.Error(w, "failed to list buckets", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		buckets, err = db.ListBuckets(r.Context(), a.Pool, accountID)
+		if err != nil {
+			http.Error(w, "failed to list buckets", http.StatusInternalServerError)
+			return
+		}
 	}
 	owner := &Owner{ID: accountID.String(), DisplayName: accountID.String()}
 	var bk []Bucket

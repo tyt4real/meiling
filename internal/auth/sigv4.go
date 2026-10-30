@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -227,6 +229,7 @@ func hmacSha256(key, data []byte) []byte {
 type Middleware struct {
 	Next       http.Handler
 	GetSecret  func(accessKeyID string) (string, error) // returns secret or ErrNotFound
+	GetAccount func(accessKeyID string) (accountID uuid.UUID, role string, err error)
 	OnUnauth   http.Handler
 }
 
@@ -263,5 +266,20 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(contextWithAccessKey(r.Context(), info.Credential.AccessKeyID))
+
+	// Look up account info if GetAccount is provided.
+	if m.GetAccount != nil {
+		accountID, role, err := m.GetAccount(info.Credential.AccessKeyID)
+		if err != nil {
+			if m.OnUnauth != nil {
+				m.OnUnauth.ServeHTTP(w, r)
+			} else {
+				http.Error(w, "invalid access key", http.StatusUnauthorized)
+			}
+			return
+		}
+		r = r.WithContext(contextWithAccount(r.Context(), accountID, role))
+	}
+
 	m.Next.ServeHTTP(w, r)
 }

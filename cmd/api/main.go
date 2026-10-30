@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/google/uuid"
 	"meiling/internal/auth"
 	"meiling/internal/config"
 	"meiling/internal/db"
@@ -60,8 +61,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Seed demo account if none exists.
-	seed(ctx, pool)
+	// Optional seed: create demo account only if SEED_ACCOUNT=true
+	if os.Getenv("SEED_ACCOUNT") == "true" {
+		seed(ctx, pool)
+	}
 
 	st, err := newStore(cfg)
 	if err != nil {
@@ -117,6 +120,17 @@ func main() {
 				return "", err
 			}
 			return k.SecretAccessKey, nil
+		},
+		GetAccount: func(accessKeyID string) (uuid.UUID, string, error) {
+			k, err := db.GetAccessKey(ctx, pool, accessKeyID)
+			if err != nil {
+				return uuid.Nil, "", err
+			}
+			acc, err := db.GetAccountByID(ctx, pool, k.AccountID)
+			if err != nil {
+				return uuid.Nil, "", err
+			}
+			return acc.ID, acc.Role, nil
 		},
 		OnUnauth: unauthHandler(),
 	}
@@ -193,7 +207,8 @@ func main() {
 func runMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS accounts (
-    id UUID PRIMARY KEY, email TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id UUID PRIMARY KEY, email TEXT UNIQUE NOT NULL, role TEXT NOT NULL DEFAULT 'user',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS buckets (
     id UUID PRIMARY KEY, account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -267,13 +282,41 @@ CREATE INDEX IF NOT EXISTS idx_multipart_parts_upload ON multipart_parts(upload_
 	return err
 }
 
+func splitEnv(v, def string) []string {
+	if v == "" {
+		v = def
+	}
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func unauthHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>AccessDenied</Code><Message>Access Denied</Message><Resource>%s</Resource><RequestId>demo</RequestId></Error>`,
+			r.URL.Path)
+	})
+}
+
 func seed(ctx context.Context, pool *pgxpool.Pool) {
 	var count int
 	pool.QueryRow(ctx, `SELECT COUNT(*) FROM accounts`).Scan(&count)
 	if count > 0 {
 		return
 	}
-	acc, err := db.CreateAccount(ctx, pool, "demo@example.com")
+	acc, err := db.CreateAccount(ctx, pool, "demo@example.com", db.RoleAdmin)
 	if err != nil {
 		slog.Error("seed account", "error", err)
 		return
@@ -302,34 +345,6 @@ func seed(ctx context.Context, pool *pgxpool.Pool) {
 		}
 	}
 	slog.Info("seeded", "account", acc.ID, "bucket", bucket.ID, "nodes", nodeEndpoints)
-}
-
-func splitEnv(v, def string) []string {
-	if v == "" {
-		v = def
-	}
-	if v == "" {
-		return nil
-	}
-	parts := strings.Split(v, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func unauthHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/xml")
-		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
-<Error><Code>AccessDenied</Code><Message>Access Denied</Message><Resource>%s</Resource><RequestId>demo</RequestId></Error>`,
-			r.URL.Path)
-	})
 }
 
 func newStore(cfg *config.Config) (store.ObjectStore, error) {

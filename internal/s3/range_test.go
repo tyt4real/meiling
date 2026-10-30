@@ -43,7 +43,7 @@ func TestGetObjectByteRanges(t *testing.T) {
 	server := buildServer()
 	defer server.Close()
 
-	acc, err := db.CreateAccount(context.Background(), s3testPool, "range-"+uuid.New().String()[:8]+"@example.com")
+	acc, err := db.CreateAccount(context.Background(), s3testPool, db.RoleUser, "range-"+uuid.New().String()[:8]+"@example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
