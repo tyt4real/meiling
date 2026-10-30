@@ -22,6 +22,8 @@ services:
           cpus: '0.5'
         reservations:
           memory: 256M
+    networks:
+      - meiling
 
   api:
     build:
@@ -37,9 +39,9 @@ services:
       PUBLIC_HOST: http://localhost:8080
       ACCESS_KEY_ID: ${SEED_ACCESS_KEY_ID:-AKIAIOSFODNN7EXAMPLE}
       SECRET_ACCESS_KEY: ${SEED_SECRET_ACCESS_KEY:-wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
-      IPFS_NODE_ENDPOINTS: ${IPFS_NODE_ENDPOINTS:-http://ipfs-node-1:5001,http://ipfs-node-2:5001}
+      IPFS_NODE_ENDPOINTS: ${IPFS_NODE_ENDPOINTS:-http://ipfs-node-1:5001}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
-      IPFS_ENDPOINT: ${IPFS_ENDPOINT:-http://localhost:5001}
+      IPFS_ENDPOINT: ${IPFS_ENDPOINT:-http://ipfs-node-1:5001}
       IPFS_CACHE_DIR: ${IPFS_CACHE_DIR:-/data/ipfs-cache}
       UI_SECRET: ${UI_SECRET:-}
     ports:
@@ -60,7 +62,28 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    networks:
+      - meiling
+      - monitoring
+
+  ipfs-node-1:
+    image: ipfs/kubo:v0.27.0
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+    volumes:
+      - ipfs_data:/data/ipfs
+    networks:
+      - meiling
+      - monitoring
 
 volumes:
   db_data:
   storage_data:
+  ipfs_data:
+
+networks:
+  meiling:
+    driver: bridge
+  monitoring:
+    driver: bridge

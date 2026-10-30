@@ -15,6 +15,8 @@ RUN apk add --no-cache ca-certificates tzdata \
 WORKDIR /app
 COPY --from=builder /bin/api /bin/api
 COPY --from=builder /src/migrations ./migrations
+COPY --from=builder /src/internal/ui/static ./internal/ui/static
+COPY --from=builder /src/internal/ui/templates ./internal/ui/templates
 ENV DB_URL=postgres://s3ipfs:s3ipfs@db:5432/s3ipfs?sslmode=disable \
     STORAGE_PATH=/data \
     LISTEN_ADDR=:8080 \
