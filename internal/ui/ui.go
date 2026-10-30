@@ -142,6 +142,7 @@ func New(cfgUISecret string, pool *pgxpool.Pool, st store.ObjectStore, reg *metr
 func (s *Server) Route(mux *http.ServeMux) {
 	mux.HandleFunc("/ui/login", s.handleLogin)
 	mux.HandleFunc("/ui/logout", s.handleLogout)
+	mux.Handle("/ui/static/", http.StripPrefix("/ui/static/", http.FileServer(http.Dir("internal/ui/static"))))
 	mux.HandleFunc("/ui/", s.requireAuth(s.handleUI))
 	mux.HandleFunc("/ui/bucket/create", s.requireAuth(s.handleBucketCreate))
 	mux.HandleFunc("/ui/upload", s.requireAuth(s.handleUpload))
