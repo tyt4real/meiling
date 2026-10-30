@@ -9,7 +9,7 @@
 <body>
 <div class="shell">
   <div class="header">
-    <div class="logo">meiling</div>
+    <div class="logo">meiling<span class="logo-sub">·s3 ipfs gateway</span></div>
     <div class="nav">
       <a href="/ui/">back</a>
       <a href="/ui/logout">sign out</a>
@@ -43,7 +43,7 @@
               <a href="/ui/object/{{.Bucket}}/{{.Key}}" class="ghost">get</a>
               {{if eq .StorageBackend "fs"}}
               <form method="post" action="/ui/object/{{.Bucket}}/{{.Key}}/delete" style="display:inline;" onsubmit="return confirm('delete {{.Key}}?');">
-                <button type="submit" class="danger" style="font-size:11px;padding:2px 6px;">del</button>
+                <button type="submit" class="danger" style="font-size:11px;padding:2px 8px;">del</button>
               </form>
               {{end}}
             </div>

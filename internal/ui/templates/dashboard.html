@@ -9,7 +9,7 @@
 <body>
 <div class="shell">
   <div class="header">
-    <div class="logo">meiling</div>
+    <div class="logo">meiling<span class="logo-sub">·s3 ipfs gateway</span></div>
     <div class="nav">
       <a href="/ui/logout">sign out</a>
       <span class="user-badge">{{.Account}}</span>
@@ -45,12 +45,14 @@
 
   <div class="section" style="margin-top:32px;">
     <div class="section-title">create bucket</div>
-    <form method="post" action="/ui/bucket/create" style="display:inline;">
-      <label for="newbucket">bucket name</label>
-      <input id="newbucket" name="bucket" type="text" placeholder="my-bucket" required style="width:220px;">
-      <button type="submit">create</button>
-    </form>
-    <p style="margin-top:8px; font-size:11px; color:var(--fg-dim);">3&ndash;63 chars, lowercase DNS-safe.</p>
+    <div class="form-card" style="max-width: 520px;">
+      <form method="post" action="/ui/bucket/create">
+        <label for="newbucket">bucket name</label>
+        <input id="newbucket" name="bucket" type="text" placeholder="my-bucket" required>
+        <button type="submit">create</button>
+      </form>
+      <p style="margin-top:10px; font-size:11px; color:var(--fg-dim);">3&ndash;63 chars, lowercase DNS-safe.</p>
+    </div>
   </div>
 </div>
 </body>

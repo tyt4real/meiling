@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>meiling — upload</title>
+<title>meiling — ingest object</title>
 <link rel="stylesheet" href="/ui/static/style.css">
 </head>
 <body>
 <div class="shell">
   <div class="header">
-    <div class="logo">meiling</div>
+    <div class="logo">meiling<span class="logo-sub">·s3 ipfs gateway</span></div>
     <div class="nav">
       <a href="/ui/">dashboard</a>
       <a href="/ui/logout">sign out</a>
@@ -32,7 +32,7 @@
       <input id="uploadbucket" name="bucket" type="text" placeholder="demo-bucket" required style="width:100%; margin-bottom:8px; display:block;">
 
       <label for="uploadkey">object key</label>
-      <input id="uploadkey" name="key" type="text" placeholder="music/song.mp3" required style="width:100%; margin-bottom:8px; display:block;">
+      <input id="uploadkey" name="key" type="text" placeholder="path/to/file.mp3" required style="width:100%; margin-bottom:8px; display:block;">
 
       <label for="uploadfile">file</label>
       <input id="uploadfile" name="file" type="file" required style="width:100%; margin-bottom:8px; display:block;">

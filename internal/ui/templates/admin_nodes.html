@@ -9,7 +9,7 @@
 <body>
 <div class="shell">
   <div class="header">
-    <div class="logo">meiling</div>
+    <div class="logo">meiling<span class="logo-sub">·s3 ipfs gateway</span></div>
     <div class="nav">
       <a href="/ui/admin/">admin</a>
       <a href="/ui/logout">sign out</a>
@@ -36,7 +36,7 @@
           <td class="mono">{{.CreatedAt}}</td>
           <td>
             <form method="post" action="/ui/admin/nodes/{{.ID}}/delete" style="display:inline;" onsubmit="return confirm('remove node?');">
-              <button type="submit" class="danger" style="font-size:11px;padding:2px 6px;">remove</button>
+              <button type="submit" class="danger" style="font-size:11px;padding:3px 10px;">remove</button>
             </form>
           </td>
         </tr>
@@ -50,7 +50,7 @@
 
   <div class="section" style="margin-top:32px;">
     <div class="section-title">register node</div>
-    <div class="form-card" style="max-width:460px;">
+    <div class="form-card" style="max-width:520px;">
       <form method="post" action="/ui/admin/nodes/add">
         <label for="nodeendpoint">api endpoint</label>
         <input id="nodeendpoint" name="endpoint" type="text" placeholder="http://ipfs-node-1:5001" required style="width:100%; margin-bottom:8px; display:block;">

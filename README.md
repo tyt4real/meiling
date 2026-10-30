@@ -12,7 +12,9 @@ From-scratch rebuild of Filebase's core: S3-compatible object storage + IPFS pin
 
 **Pluggable storage**: filesystem (default) or IPFS-backed via the `internal/store.ObjectStore` interface.
 
-## Run
+**Web UI**: server-rendered admin + user UI at `/ui`, styled after lain.rocks (dark background, green accents, monospace typography, CRT scanlines). Cookie-based session login reuses S3 seed credentials (account email + S3 secret access key).
+
+## Runtime
 
 ```
 docker compose up
@@ -21,6 +23,12 @@ docker compose up
 Seed credentials (demo account + `demo-bucket`):
 - Access key: `AKIAIOSFODNN7EXAMPLE`
 - Secret key: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`
+
+## UI Login
+
+Navigate to `http://localhost:8080/ui/login`. Enter the account email (`demo@example.com`) and the S3 secret access key (`wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) to sign in. A signed `meiling_session` cookie grants access to `/ui/` (user dashboard) and `/ui/admin/` (admin panel).
+
+See `AGENTS.md` for full configuration and developer guidance.
 
 ## Test with AWS CLI
 

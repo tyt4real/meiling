@@ -135,6 +135,26 @@ scanlines).
 - `GET /ui/admin/pins` — list IPFS pins and their replica status.
 - `GET /ui/logout` — end the session.
 
+### UI Login
+
+The UI uses cookie-based session authentication that is separate from the SigV4
+S3 API authentication. To log in:
+
+1. Navigate to `http://localhost:8080/ui/login`.
+2. Enter the account email (`demo@example.com`) in the "account email" field.
+3. Enter the S3 secret access key (`wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`)
+   in the "access secret" field.
+4. Click "connect".
+
+On success, a signed session cookie (`meiling_session`) is set and you are
+redirected to the user dashboard at `/ui/`. The cookie is HMAC-SHA256 signed
+using `UI_SECRET` (defaulting to an insecure development value if unset) and
+expires after 24 hours.
+
+The UI authenticates against the same PostgreSQL metadata database as the S3
+API: it looks up the account by email, then verifies the supplied password
+against that account's access key `secret_access_key`.
+
 The UI authenticates via a signed session cookie (`meiling_session`). Set
 `UI_SECRET` to a strong random value for production; the default is insecure and
 only intended for local development.
